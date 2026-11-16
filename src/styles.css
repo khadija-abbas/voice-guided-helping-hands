@@ -229,7 +229,7 @@
   .hz-dlg { width: 100%; background: var(--hz-surface); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--hz-e2); animation: hz-up 0.25s ease-out; }
   .hz-dlg h2 { font: 700 24px/32px var(--font-sans); margin: 0; }
   .hz-ntf { position: absolute; top: 48px; inset-inline: 12px; z-index: 15; display: flex; gap: 12px; align-items: flex-start; text-align: start; background: var(--hz-surface); border: 1px solid var(--hz-n300); border-radius: 16px; padding: 12px 16px; box-shadow: var(--hz-e2); font: 500 16px/24px var(--font-sans); color: var(--hz-n900); cursor: pointer; animation: hz-drop 0.35s ease-out; }
-  .hz-ntf small { display: block; color: var(--hz-n600); }
+  .hz-ntf small { display: block; color: var(--hz-n600); font-size: 16px; }
   .hz-ntf svg { color: var(--hz-a); flex: none; margin-top: 2px; }
 
   /* Transitions */

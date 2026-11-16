@@ -371,7 +371,7 @@ function CallEnded() {
       {isFriend ? (
         <div className="hz-fade-in"><Notice v="ok" icon="ck" title={t.R_friends(name)} /></div>
       ) : (
-        <Btn kind="s" onClick={() => vid && set((x) => ({ ...x, friends: [...x.friends, vid] }))}>{t.R_addFriend(name)}</Btn>
+        <Btn kind="s" onClick={() => { if (vid) set((x) => ({ ...x, friends: [...x.friends, vid] })); }}>{t.R_addFriend(name)}</Btn>
       )}
       {reported ? (
         <div className="hz-fade-in"><Notice v="ok" icon="ck" title={t.R_reported} /></div>
@@ -643,7 +643,7 @@ export function Prototype() {
   const [navKey, setNavKey] = useState(0);
   const [confirm, setConfirm] = useState(false);
   const phoneRef = useRef<HTMLDivElement>(null);
-  const screen = stack[stack.length - 1];
+  const screen: ScreenId = stack[stack.length - 1] ?? "A";
   const t = STRINGS[s.lang];
 
   const set = useCallback((fn: (s: Session) => Session) => setS(fn), []);

@@ -20,7 +20,7 @@ const P = {
 } as const;
 export type IconName = keyof typeof P;
 
-export function Icon({ n, s = 24, className }: { n: IconName; s?: number; className?: string }) {
+export function Icon({ n, s = 24, className }: { n: IconName; s?: number | undefined; className?: string | undefined }) {
   return (
     <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
       <path d={P[n]} />
@@ -29,7 +29,7 @@ export function Icon({ n, s = 24, className }: { n: IconName; s?: number; classN
 }
 
 type BtnKind = "p" | "s" | "pr";
-export function Btn({ kind = "p", children, onClick, disabled, large, busy, label }: { kind?: BtnKind; children: ReactNode; onClick?: () => void; disabled?: boolean; large?: boolean; busy?: boolean; label?: string }) {
+export function Btn({ kind = "p", children, onClick, disabled, large, busy, label }: { kind?: BtnKind | undefined; children: ReactNode; onClick?: (() => void) | undefined; disabled?: boolean | undefined; large?: boolean | undefined; busy?: boolean | undefined; label?: string | undefined }) {
   return (
     <button type="button" className={`hz-bt hz-${kind}${large ? " hz-bl" : ""}${busy ? " is-busy" : ""}`} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} aria-label={label}>
       {children}
@@ -37,7 +37,7 @@ export function Btn({ kind = "p", children, onClick, disabled, large, busy, labe
   );
 }
 
-export function HelpType({ icon, children, onClick, last, lastLabel }: { icon: IconName; children: ReactNode; onClick: () => void; last?: boolean; lastLabel: string }) {
+export function HelpType({ icon, children, onClick, last, lastLabel }: { icon: IconName; children: ReactNode; onClick: () => void; last?: boolean | undefined; lastLabel: string }) {
   return (
     <button type="button" className={`hz-bt hz-ht${last ? " hz-pd" : ""}`} onClick={onClick}>
       <span className="ic"><Icon n={icon} s={28} /></span>
@@ -51,7 +51,7 @@ export function HelpType({ icon, children, onClick, last, lastLabel }: { icon: I
   );
 }
 
-export function Notice({ v, icon, title, children }: { v: "i" | "ok" | "e" | "n"; icon: IconName; title?: string; children?: ReactNode }) {
+export function Notice({ v, icon, title, children }: { v: "i" | "ok" | "e" | "n"; icon: IconName; title?: string | undefined; children?: ReactNode | undefined }) {
   return (
     <div className={`hz-bn hz-bn-${v}`} role={v === "e" ? "alert" : undefined}>
       <Icon n={icon} />
@@ -60,7 +60,7 @@ export function Notice({ v, icon, title, children }: { v: "i" | "ok" | "e" | "n"
   );
 }
 
-export function Chip({ on, disabled, children, onClick, note }: { on?: boolean; disabled?: boolean; children: ReactNode; onClick: () => void; note?: string }) {
+export function Chip({ on, disabled, children, onClick, note }: { on?: boolean | undefined; disabled?: boolean | undefined; children: ReactNode; onClick: () => void; note?: string | undefined }) {
   return (
     <button type="button" role="radio" aria-checked={!!on} className={`hz-ch${on ? " on" : ""}`} disabled={disabled} onClick={onClick}>
       {on && <Icon n="ck" s={20} />}
@@ -71,7 +71,7 @@ export function Chip({ on, disabled, children, onClick, note }: { on?: boolean; 
   );
 }
 
-export function StatusCard({ status, label, loading, number, numberLabel, sample }: { status: string; label: string; loading?: boolean; number: string; numberLabel: string; sample: string }) {
+export function StatusCard({ status, label, loading, number, numberLabel, sample }: { status: string; label: string; loading?: boolean | undefined; number: string; numberLabel: string; sample: string }) {
   return (
     <div className="hz-sc">
       <div className="h">
@@ -84,7 +84,7 @@ export function StatusCard({ status, label, loading, number, numberLabel, sample
   );
 }
 
-export function Camera({ children, tall, img, imgAlt, tag }: { children?: ReactNode; tall?: boolean; img?: string; imgAlt?: string; tag?: string }) {
+export function Camera({ children, tall, img, imgAlt, tag }: { children?: ReactNode | undefined; tall?: boolean | undefined; img?: string | undefined; imgAlt?: string | undefined; tag?: string | undefined }) {
   return (
     <div className={`hz-cm${tall ? " tl" : ""}${img ? " has-img" : ""}`}>
       {img ? (
@@ -111,7 +111,7 @@ export function Toggle({ on, label, onText, offText, onChange }: { on: boolean; 
   );
 }
 
-export function Tip({ icon, children, no }: { icon: IconName; children: ReactNode; no?: boolean }) {
+export function Tip({ icon, children, no }: { icon: IconName; children: ReactNode; no?: boolean | undefined }) {
   return (
     <div className={`hz-tp${no ? " no" : ""}`}>
       <Icon n={icon} />
