@@ -7,7 +7,8 @@ function norm(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFC")
-    .replace(/[.,!?؟،۔:;"'()\u064B-\u065F\u0670]/g, " ")
+    // Punctuation, symbols, Urdu vowel marks and invisible joiners/direction marks all become spaces.
+    .replace(/[\p{P}\p{S}\u064B-\u065F\u0670\u200B-\u200F\u2066-\u2069\uFEFF]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -22,7 +23,7 @@ const HELPER_WORDS: [Helper, string[]][] = [
   ["anyone", ["anyone", "any one", "anybody", "everyone", "koi bhi", "کوئی بھی"]],
   ["woman", ["woman", "women", "female", "lady", "khatoon", "aurat", "خاتون", "عورت", "خواتین"]],
   ["friend", ["friend", "friends", "dost", "دوست"]],
-  ["man", ["man", "men", "male", "mard", "مرد"]],
+  ["man", ["man", "men", "male", "mard", "aadmi", "admi", "مرد", "آدمی"]],
 ];
 export function parseHelper(text: string): Helper | null {
   return HELPER_WORDS.find(([, w]) => has(text, w))?.[0] ?? null;
@@ -125,4 +126,52 @@ export type CmdWord = keyof typeof CMD_WORDS;
 /** First command (in the order given) whose words were heard. */
 export function parseCmd(text: string, order: CmdWord[]): CmdWord | null {
   return order.find((k) => has(text, CMD_WORDS[k])) ?? null;
+}
+
+/* ---------- First command on five blind-user screens (Home, Choose helper, Before the call, Live call, Call ended) ---------- */
+
+const NEED_HELP = ["i need help", "need help", "help", "mujhe madad chahiye", "madad", "مجھے مدد چاہیے", "مدد چاہیے", "مدد", "ہیلپ"];
+/** Home: "I need help". */
+export function parseNeedHelp(text: string): boolean {
+  return has(text, NEED_HELP);
+}
+
+const CONTINUE = ["continue", "next", "jari", "jari rakhen", "aage", "آگے", "جاری", "جاری رکھیں"];
+/** Choose helper: a helper word sets the helper; "continue" moves on. */
+export function parseHelperCmd(text: string): Helper | "continue" | null {
+  return parseHelper(text) ?? (has(text, CONTINUE) ? "continue" : null);
+}
+
+const START_CALL = ["start the call", "start call", "start", "call", "begin", "shuru", "شروع", "کال شروع کریں", "کال", "اسٹارٹ", "سٹارٹ"];
+/** Before the call: "start the call". */
+export function parseStartCall(text: string): boolean {
+  return has(text, START_CALL);
+}
+
+const END_CALL = ["end call", "end the call", "end", "hang up", "finish", "khatam", "کال ختم کریں", "ختم", "اینڈ", "فنش"];
+/** Live call: "end call". */
+export function parseEndCall(text: string): boolean {
+  return has(text, END_CALL);
+}
+
+export type CallEndedCmd =
+  | { k: "number"; show: boolean }
+  | { k: "report" }
+  | { k: "done" }
+  | { k: "friend"; yes: boolean }
+  | { k: "rate"; n: number };
+const REPORT = ["report", "complain", "complaint", "shikayat", "رپورٹ", "شکایت"];
+const DONE = ["done", "ho gaya", "ہو گیا", "ہوگیا", "مکمل", "ڈن"];
+const FRIEND_NO = ["no", "nope", "nahi", "nahin", "نہیں"];
+const FRIEND_YES = ["yes", "yeah", "yep", "add friend", "add as friend", "add as a friend", "haan", "han", "ہاں", "دوست بنائیں"];
+/** Call ended: show/hide number, report, done, friend yes/no, then a rating from 1 to 5. */
+export function parseCallEnded(text: string): CallEndedCmd | null {
+  const sh = parseShowHide(text);
+  if (sh) return { k: "number", show: sh === "show" };
+  if (has(text, REPORT)) return { k: "report" };
+  if (has(text, DONE)) return { k: "done" };
+  if (has(text, FRIEND_NO)) return { k: "friend", yes: false };
+  if (has(text, FRIEND_YES)) return { k: "friend", yes: true };
+  const n = parseRating(text);
+  return n ? { k: "rate", n } : null;
 }

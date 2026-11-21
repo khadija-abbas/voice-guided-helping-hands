@@ -48,7 +48,7 @@ export function ArmHint({ id, listening }: { id: string; listening: boolean }) {
 
 /** Returns the screen's ask(); Frame runs it when the screen opens and registers it for repeat and cancel. */
 export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
-  const { say, langRef, voiceRef, markVoiceOff, markBlocked, markVoiceOk, begin, isCurrent, clearArm, setMic, back } = useP();
+  const { say, langRef, voiceRef, markVoiceOff, hear, begin, isCurrent, clearArm, setMic, back } = useP();
   const vRef = useRef(voice);
   vRef.current = voice;
   const spokenRef = useRef(spoken);
@@ -73,37 +73,39 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
     }
     if (!vRef.current || (!vRef.current.parse && !vRef.current.cmds)) return;
     if (voiceRef.current === "off") { await markVoiceOff(); return; }
-    for (let attempt = 0; attempt < 2; attempt++) {
-      setMic({ s: "listening" });
-      const r = await listen(vRef.current?.listenLang?.(attempt) ?? langRef.current, LISTEN_MS);
-      if (!isCurrent(token)) return;
-      if (r.status === "aborted") { setMic({ s: "idle" }); return; }
-      if (r.status === "blocked") { setMic({ s: "idle" }); await markBlocked(); return; }
-      if (r.status === "unavailable") { setMic({ s: "idle" }); await markVoiceOff(); return; }
-      const v = vRef.current;
-      if (r.status === "ok" && v) {
-        markVoiceOk();
-        for (const alt of r.alternatives) {
-          const hit = v.parse?.(alt) ?? null;
-          const key = hit ? null : parseCmd(alt, Object.keys(v.cmds ?? {}) as CmdWord[]);
-          const run = hit ?? (key ? v.cmds?.[key] : undefined);
-          if (run) { setMic({ s: "heard", heard: r.text }); reportHeard(alt, true); run(); return; }
-          const nav = parseConfirm(alt);
-          if (nav === "repeat") { reportHeard(alt, true); void ask({ mode: "full" }); return; }
-          if (nav === "back") { reportHeard(alt, true); backRef.current(); return; }
-        }
-        reportHeard(r.text, false);
-      }
-      if (v?.quiet) { setMic({ s: "idle" }); return; }
-      if (attempt === 0) {
-        setMic({ s: r.status === "ok" ? "heard" : "idle", heard: r.status === "ok" ? r.text : "" });
-        const q = v?.q;
-        ok = v?.retry ? await v.retry() : await say((x, l) => `${x.notHeardQ} ${q ? q(x, l) : ""}`.trim());
-        if (!ok || !isCurrent(token)) return;
-      }
+    type Hit = { run: () => void } | "repeat" | "back";
+    const v0 = vRef.current;
+    const r = await hear<Hit>(token, {
+      lang: (attempt) => vRef.current?.listenLang?.(attempt) ?? langRef.current,
+      match: (alt) => {
+        const v = vRef.current;
+        if (!v) return null;
+        const hit = v.parse?.(alt) ?? null;
+        const key = hit ? null : parseCmd(alt, Object.keys(v.cmds ?? {}) as CmdWord[]);
+        const run = hit ?? (key ? v.cmds?.[key] : undefined);
+        if (run) return { run };
+        const nav = parseConfirm(alt);
+        return nav === "repeat" || nav === "back" ? nav : null;
+      },
+      retry: () => {
+        const v = vRef.current;
+        return v?.retry ? v.retry() : say((x, l) => `${x.notHeardQ} ${v?.q ? v.q(x, l) : ""}`.trim());
+      },
+      heardRetry: v0?.options ? (heard) => say((x, l) => x.heardSay(heard, vRef.current?.options?.(x, l) ?? "")) : undefined,
+      quiet: v0?.quiet,
+      onListen: (on) => { if (on) setMic({ s: "listening" }); },
+      onMiss: (heard) => setMic(heard ? { s: "heard", heard } : { s: "idle" }),
+    });
+    if (r.s === "stop") { if (isCurrent(token)) setMic({ s: "idle" }); return; }
+    if (r.s === "hit") {
+      if (r.hit === "repeat") { void ask({ mode: "full" }); return; }
+      if (r.hit === "back") { backRef.current(); return; }
+      setMic({ s: "heard", heard: r.text });
+      r.hit.run();
+      return;
     }
     setMic({ s: "failed" });
-  }, [say, langRef, voiceRef, markVoiceOff, markBlocked, markVoiceOk, begin, isCurrent, clearArm, setMic]);
+  }, [say, langRef, voiceRef, markVoiceOff, hear, begin, isCurrent, clearArm, setMic]);
   return ask;
 }
 

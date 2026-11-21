@@ -45,9 +45,26 @@ export interface ScreenVoice {
   prompt?: () => Promise<boolean>;
   retry?: () => Promise<boolean>;
   listenLang?: (attempt: number) => Lang;
+  /** Words to offer when something was heard but did not match: "I heard … Please say <options>." */
+  options?: Say;
 }
 /** full = caption + question, question = question only, listen = no speech. pre is spoken first. */
 export interface AskOpts { mode?: "full" | "question" | "listen"; pre?: Say }
+/** One listening loop shared by the confirm step and the screen's first command. */
+export interface HearOpts<T> {
+  lang?: Lang | ((attempt: number) => Lang) | undefined;
+  /** Checked against every alternative transcript; the first non-null result wins. */
+  match: (alt: string) => T | null;
+  /** Spoken when nothing was heard (and, without heardRetry, when words did not match). */
+  retry: () => Promise<boolean>;
+  /** Spoken when words were heard but did not match. */
+  heardRetry?: ((heard: string) => Promise<boolean>) | undefined;
+  /** Never says "I did not hear you"; stops quietly instead. */
+  quiet?: boolean | undefined;
+  onListen?: ((on: boolean) => void) | undefined;
+  onMiss?: ((heard: string) => void) | undefined;
+}
+export type HearResult<T> = { s: "hit"; hit: T; text: string } | { s: "fail" } | { s: "stop" };
 export type Mic = { s: "idle" | "listening" | "heard" | "failed"; heard?: string };
 
 export interface Ctx {
@@ -84,6 +101,7 @@ export interface Ctx {
   markBlocked: () => Promise<void>;
   blocked: boolean;
   markVoiceOk: () => void;
+  hear: <T>(token: number, o: HearOpts<T>) => Promise<HearResult<T>>;
 }
 
 export const PrototypeContext = createContext<Ctx | null>(null);

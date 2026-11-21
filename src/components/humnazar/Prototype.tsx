@@ -26,10 +26,10 @@ import {
   type SampleItemId,
 } from "@/lib/humnazar/logic";
 import { cancelSpeech, closeScreen, hasUrduVoice, listen, openScreen, recognitionSupported, reportHeard, speak, stopListening } from "@/lib/humnazar/speech";
-import { parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
+import { parseCallEnded, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseHelpType, parseNeedHelp, parseStartCall, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
 import {
   PrototypeContext, useP,
-  type Anim, type AskOpts, type Ctx, type Mic, type Mode, type Request, type Say, type ScreenId, type ScreenVoice, type Session, type VoiceState,
+  type Anim, type AskOpts, type Ctx, type HearOpts, type HearResult, type Mic, type Mode, type Request, type Say, type ScreenId, type ScreenVoice, type Session, type VoiceState,
 } from "./context";
 import { ArmHint, ConfirmBtn, ListenRow, MicLine, MicStatusLine, useScreenAsk, VoiceRow } from "./voice";
 import { Btn, Camera, Icon, Notice, StatusCard, Tip, Toggle } from "./ui";
@@ -181,7 +181,7 @@ function Home() {
   const needHelp = () => { set((s) => ({ ...s, request: freshRequest() })); go("D"); };
   return (
     <Frame title={t.B_title} cap={(x) => x.B_cap}
-      voice={{ q: (x) => x.B_q, cmds: { help: () => press("needHelp", (x) => x.cf.needHelp, needHelp) } }}>
+      voice={{ q: (x) => x.B_q, options: (x) => x.B_opts, parse: (x) => (parseNeedHelp(x) ? () => press("needHelp", (y) => y.cf.needHelp, needHelp) : null) }}>
       <NotForEmergencies />
       <div className="hz-gr">
         <ConfirmBtn id="needHelp" msg={(x) => x.cf.needHelp} onConfirm={needHelp}>{t.B_help}</ConfirmBtn>
@@ -301,8 +301,13 @@ function ChooseHelper() {
     <Frame title={t.G_title} cap={(x) => x.G_cap}
       voice={{
         q: (x) => (selected ? `${x.G_echoHelper(x.helper[selected])} ${x.G_qNext}` : x.G_qHelper),
-        parse: (x) => { const h = parseHelper(x); return h ? () => pickHelper(h) : null; },
-        cmds: { continue: () => (selected ? press("g-continue", (x) => x.cf.continue, next) : reask({ mode: "listen", pre: (x) => `${x.G_pickFree} ${x.G_qHelper}` })) },
+        options: (x) => x.G_opts,
+        parse: (x) => {
+          const h = parseHelperCmd(x);
+          if (!h) return null;
+          if (h !== "continue") return () => pickHelper(h);
+          return () => (selected ? press("g-continue", (y) => y.cf.continue, next) : reask({ mode: "listen", pre: (y) => `${y.G_pickFree} ${y.G_qHelper}` }));
+        },
       }}
       actions={<ConfirmBtn id="g-continue" msg={(x) => x.cf.continue} onConfirm={next} disabled={!selected}>{t.G_continue}</ConfirmBtn>}>
       <VoiceRow label={t.G_helper} value={selected ? t.helper[selected] : t.notChosen} question={(x) => x.G_qHelper}
@@ -327,7 +332,7 @@ function BeforeCall() {
   const start = () => setBusy(true);
   return (
     <Frame title={t.T_title} cap={(x) => (busy ? x.T_starting : x.T_cap)}
-      voice={{ q: (x) => x.T_q, cmds: { start: () => press("t-start", (x) => x.cf.startCall, start) } }}
+      voice={{ q: (x) => x.T_q, options: (x) => x.T_opts, parse: (x) => (parseStartCall(x) ? () => press("t-start", (y) => y.cf.startCall, start) : null) }}
       actions={<ConfirmBtn id="t-start" busy={busy} msg={(x) => x.cf.startCall} onConfirm={start}>
         {busy ? <><span className="hz-sp on-p" aria-hidden="true" />{t.T_starting}</> : t.T_start}
       </ConfirmBtn>}>
@@ -421,7 +426,7 @@ function LiveCall() {
   return (
     <Frame title={t.M_title} cap={(x, l) => (step === 0 ? x.M_cap(vName(vid, l)) : step === 1 ? x.M_c1(vName(vid, l)) : x.M_c2(vName(vid, l)))}
       spoken={(x, l) => x.M_cap(vName(vid, l))}
-      voice={{ q: (x) => x.M_q, quiet: true, cmds: { end: () => press("m-end", (x) => x.cf.endCall, end) } }}
+      voice={{ q: (x) => x.M_q, quiet: true, options: (x) => x.M_opts, parse: (x) => (parseEndCall(x) ? () => press("m-end", (y) => y.cf.endCall, end) : null) }}
       actions={<ConfirmBtn id="m-end" msg={(x) => x.cf.endCall} onConfirm={end}>{t.M_end}</ConfirmBtn>}>
       <Camera tall img={medicineImg} imgAlt={t.item.medicine} tag={t.cameraSample} />
       <p><b>{p.slice(0, cut)}</b>{p.slice(cut)}</p>
@@ -455,18 +460,21 @@ function CallEnded() {
     <Frame title={t.R_title} cap={(x) => x.R_cap}
       voice={{
         q: (x) => x.R_q,
+        options: (x) => x.R_opts,
         parse: (x) => {
-          const n = parseRating(x);
-          if (n) return () => rate(n);
-          const sh = parseShowHide(x);
-          return sh ? () => setNumber(sh === "show") : null;
+          const c = parseCallEnded(x);
+          if (!c) return null;
+          if (c.k === "rate") return () => rate(c.n);
+          if (c.k === "number") return () => setNumber(c.show);
+          if (c.k === "friend") return () => setFriend(c.yes);
+          if (c.k === "report") return () => (reported ? next((y) => y.R_reported) : press("r-report", (y) => y.cf.report, report));
+          return () => press("r-done", (y) => y.cf.doneCall, done);
         },
+        // Bare "rate", "friend" or "number" asks that row's question.
         cmds: {
           rate: () => rateAsk.current?.(),
           friend: () => friendAsk.current?.(),
           number: () => numberAsk.current?.(),
-          report: () => (reported ? next((x) => x.R_reported) : press("r-report", (x) => x.cf.report, report)),
-          done: () => press("r-done", (x) => x.cf.doneCall, done),
         },
       }}
       actions={<ConfirmBtn id="r-done" msg={(x) => x.cf.doneCall} onConfirm={done}>{t.done}</ConfirmBtn>}>
@@ -868,7 +876,39 @@ export function Prototype() {
     setArmListening(false);
   }, []);
 
-  /** Speaks what the choice does, then listens up to 8 s for confirm, cancel, repeat or back; one "I did not hear you" retry. */
+  /** Listens up to 8 s, twice: "I did not hear you" only when nothing was heard; otherwise heardRetry ("I heard …"). */
+  const hear = useCallback(async <T,>(token: number, o: HearOpts<T>): Promise<HearResult<T>> => {
+    const tries = 2;
+    for (let attempt = 0; attempt < tries; attempt++) {
+      o.onListen?.(true);
+      const lang = typeof o.lang === "function" ? o.lang(attempt) : (o.lang ?? langRef.current);
+      const r = await listen(lang, LISTEN_MS);
+      if (!isCurrent(token)) return { s: "stop" };
+      o.onListen?.(false);
+      if (r.status === "aborted") return { s: "stop" };
+      if (r.status === "blocked") { await markBlocked(); return { s: "stop" }; }
+      if (r.status === "unavailable") { await markVoiceOff(); return { s: "stop" }; }
+      const heard = r.status === "ok" ? r.text.trim() : "";
+      if (r.status === "ok") {
+        markVoiceOk();
+        for (const alt of r.alternatives) {
+          const hit = o.match(alt);
+          if (hit !== null && hit !== undefined) { reportHeard(alt, true); return { s: "hit", hit, text: alt }; }
+        }
+        reportHeard(r.text, false);
+      }
+      const useHeard = !!heard && !!o.heardRetry;
+      if (o.quiet && !useHeard) return { s: "stop" };
+      if (attempt < tries - 1) {
+        o.onMiss?.(heard);
+        const ok = useHeard && o.heardRetry ? await o.heardRetry(heard) : await o.retry();
+        if (!ok || !isCurrent(token)) return { s: "stop" };
+      }
+    }
+    return o.quiet ? { s: "stop" } : { s: "fail" };
+  }, [langRef, isCurrent, markBlocked, markVoiceOff, markVoiceOk]);
+
+  /** Speaks what the choice does, then listens for confirm, cancel, repeat or back. */
   const runConfirm = useCallback(async (a: Arm): Promise<void> => {
     const token = begin();
     stopListening();
@@ -876,31 +916,15 @@ export function Prototype() {
     armRef.current = a;
     setArmed(a.id);
     setArmListening(false);
-    let ok = await say(a.msg, a.lang);
+    const ok = await say(a.msg, a.lang);
     if (!ok || !isCurrent(token) || voiceRef.current === "off") return;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      setArmListening(true);
-      const r = await listen(a.lang ?? langRef.current, LISTEN_MS);
-      if (!isCurrent(token)) return;
-      setArmListening(false);
-      if (r.status === "aborted") return;
-      if (r.status === "blocked") { await markBlocked(); return; }
-      if (r.status === "unavailable") { await markVoiceOff(); return; }
-      if (r.status === "ok") {
-        markVoiceOk();
-        const w = r.alternatives.map(parseConfirm).find((x) => x !== null) ?? null;
-        reportHeard(r.text, w !== null);
-        if (w === "confirm") { clearArm(); a.action(); return; }
-        if (w === "cancel") { clearArm(); reask({ mode: "question" }); return; }
-        if (w === "repeat") { void runConfirm(a); return; }
-        if (w === "back") { clearArm(); backRef.current(); return; }
-      }
-      if (attempt === 0) {
-        ok = await say((x) => x.notHeard, a.lang);
-        if (!ok || !isCurrent(token)) return;
-      }
-    }
-  }, [begin, isCurrent, setMic, say, markVoiceOff, markBlocked, markVoiceOk, clearArm, reask]);
+    const r = await hear(token, { lang: a.lang, match: parseConfirm, retry: () => say((x) => x.notHeard, a.lang), onListen: setArmListening });
+    if (r.s !== "hit") return;
+    if (r.hit === "confirm") { clearArm(); a.action(); return; }
+    if (r.hit === "cancel") { clearArm(); reask({ mode: "question" }); return; }
+    if (r.hit === "repeat") { void runConfirm(a); return; }
+    if (r.hit === "back") { clearArm(); backRef.current(); return; }
+  }, [begin, isCurrent, setMic, say, hear, clearArm, reask]);
 
   const press = useCallback<Ctx["press"]>((id, msg, action, lang) => {
     // Silent fallback for evaluators: a second tap on the same choice runs it.
@@ -971,7 +995,7 @@ export function Prototype() {
   const ctx: Ctx = {
     t, lang: s.lang, langRef, setLang, s, blind, set, go, back, confirmEnd: () => setConfirm(true),
     say, press, armed, armListening, tapRepeat, reask, registerScreen, begin, isCurrent, clearArm,
-    mic, setMic, voiceRef, voice, markVoiceOff, markBlocked, blocked, markVoiceOk,
+    mic, setMic, voiceRef, voice, markVoiceOff, markBlocked, blocked, markVoiceOk, hear,
   };
 
   // Tapping empty space on a blind-user screen repeats the prompt and listens again.

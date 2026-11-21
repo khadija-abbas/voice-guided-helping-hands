@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCmd, parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber } from "./voice-words";
+import { parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber } from "./voice-words";
 
 describe("spoken answers", () => {
   it("helper words in English and Urdu", () => {
@@ -99,5 +99,53 @@ describe("show or hide number", () => {
     expect(parseShowHide("hide number")).toBe("hide");
     expect(parseShowHide("نمبر چھپائیں")).toBe("hide");
     expect(parseShowHide("number")).toBeNull();
+  });
+});
+
+describe("first command on Home, Choose helper, Before the call, Live call, Call ended", () => {
+  it("Home: I need help", () => {
+    for (const w of ["I need help.", "need help", "Help!", "مجھے مدد چاہیے۔", "مدد"]) expect(parseNeedHelp(w)).toBe(true);
+    expect(parseNeedHelp("banana")).toBe(false);
+  });
+
+  it("Choose helper: helper words and continue", () => {
+    expect(parseHelperCmd("Friend")).toBe("friend");
+    expect(parseHelperCmd("دوست")).toBe("friend");
+    expect(parseHelperCmd("a lady")).toBe("woman");
+    expect(parseHelperCmd("عورت")).toBe("woman");
+    expect(parseHelperCmd("آدمی")).toBe("man");
+    expect(parseHelperCmd("any one")).toBe("anyone");
+    expect(parseHelperCmd("کوئی بھی")).toBe("anyone");
+    expect(parseHelperCmd("Continue.")).toBe("continue");
+    expect(parseHelperCmd("آگے")).toBe("continue");
+    expect(parseHelperCmd("جاری رکھیں")).toBe("continue");
+  });
+
+  it("Before the call: start", () => {
+    for (const w of ["Start the call", "start", "call", "begin", "شروع", "کال شروع کریں"]) expect(parseStartCall(w)).toBe(true);
+    expect(parseStartCall("banana")).toBe(false);
+  });
+
+  it("Live call: end", () => {
+    for (const w of ["End call", "end", "hang up", "finish", "کال ختم کریں", "ختم"]) expect(parseEndCall(w)).toBe(true);
+    expect(parseEndCall("friend")).toBe(false);
+  });
+
+  it("Call ended: rating, friend, number, report, done", () => {
+    expect(parseCallEnded("four")).toEqual({ k: "rate", n: 4 });
+    expect(parseCallEnded("5")).toEqual({ k: "rate", n: 5 });
+    expect(parseCallEnded("تین")).toEqual({ k: "rate", n: 3 });
+    expect(parseCallEnded("Yes")).toEqual({ k: "friend", yes: true });
+    expect(parseCallEnded("add friend")).toEqual({ k: "friend", yes: true });
+    expect(parseCallEnded("ہاں")).toEqual({ k: "friend", yes: true });
+    expect(parseCallEnded("no")).toEqual({ k: "friend", yes: false });
+    expect(parseCallEnded("نہیں")).toEqual({ k: "friend", yes: false });
+    expect(parseCallEnded("show number")).toEqual({ k: "number", show: true });
+    expect(parseCallEnded("hide number")).toEqual({ k: "number", show: false });
+    expect(parseCallEnded("report")).toEqual({ k: "report" });
+    expect(parseCallEnded("رپورٹ")).toEqual({ k: "report" });
+    expect(parseCallEnded("Done.")).toEqual({ k: "done" });
+    expect(parseCallEnded("ہو گیا")).toEqual({ k: "done" });
+    expect(parseCallEnded("banana")).toBeNull();
   });
 });
