@@ -59,8 +59,11 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, a
   title: string; caption?: string; cap?: Say; spoken?: Say; voice?: ScreenVoice; strip?: ReactNode; hideMic?: boolean;
   children?: ReactNode; actions?: ReactNode; noBack?: boolean;
 }) {
-  const { t, lang, back, blind, registerScreen, tapRepeat } = useP();
+  const { t, lang, back, blind, s, registerScreen, tapRepeat } = useP();
   const text = cap ? cap(t, lang) : (caption ?? "");
+  // Blind-user screens: the "Reads aloud:" box is hidden from view (the caption is still spoken).
+  // Choose language is shared with volunteers, so their copy of this screen keeps the box.
+  const capHidden = blind && s.role !== "volunteer";
   const speech = spoken ?? cap ?? (() => text);
   const ask = useScreenAsk(voice, speech);
 
@@ -92,7 +95,7 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, a
       </div>
       {blind ? (
         <>
-          <button type="button" className="hz-cs" role="status" aria-live="polite" dir={lang === "ur" ? "rtl" : "ltr"} onClick={tapRepeat}>
+          <button type="button" className={`hz-cs${capHidden ? " hz-hide" : ""}`} role="status" aria-live="polite" dir={lang === "ur" ? "rtl" : "ltr"} onClick={tapRepeat}>
             {content}
           </button>
           {!hideMic && <MicLine />}

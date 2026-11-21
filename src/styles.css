@@ -261,6 +261,8 @@
   [dir="rtl"] .hz-blind .hz-back svg { transform: none; }
   .hz-blind .hz-cs { font: 500 20px/28px var(--font-sans); border: 0; text-align: start; width: auto; cursor: pointer; }
   .hz-blind .hz-cs svg { margin-top: 4px; }
+  /* Blind-user screens: the caption box is not shown; the same text is still spoken. */
+  .hz-blind .hz-cs.hz-hide { display: none; }
   .hz-blind .hz-ct, .hz-blind .hz-ac { gap: 16px; }
   .hz-blind .hz-bt { min-height: 72px; font: 600 20px/28px var(--font-sans); }
   .hz-blind .hz-gr .hz-bt { font-size: 32px; line-height: 40px; }
