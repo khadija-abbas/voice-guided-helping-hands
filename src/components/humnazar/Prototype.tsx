@@ -61,22 +61,23 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, hideCap, ch
 }) {
   const { t, lang, back, blind, s, registerScreen, tapRepeat } = useP();
   const text = cap ? cap(t, lang) : (caption ?? "");
-  // Blind-user screens: the "Reads aloud:" box is hidden from view (the caption is still spoken).
-  // Choose language is shared with volunteers, so their copy of this screen keeps the box.
-  // hideCap hides the box on one screen only (the Start screen); the spoken caption is untouched.
-  const capHidden = hideCap || (blind && s.role !== "volunteer");
+  // The "Reads aloud:" box is hidden from view on Start (hideCap), blind-user screens and volunteer screens;
+  // blind-user captions are still spoken.
+  const capHidden = hideCap || blind || s.role === "volunteer";
+  // Volunteers never get voice input: their copy of Choose language does not speak, listen or show mic lines.
+  const voiceOn = blind && s.role !== "volunteer";
   const speech = spoken ?? cap ?? (() => text);
   const ask = useScreenAsk(voice, speech);
 
   // Every blind-user screen gets a new voice-controller id when it opens (older results are ignored),
   // speaks its caption and question, then listens. Closing the screen stops its speech and listening.
   useEffect(() => {
-    if (!blind) return;
+    if (!voiceOn) return;
     const id = openScreen();
     registerScreen(ask);
     void ask({ mode: "full" });
     return () => { closeScreen(id); registerScreen(null); };
-  }, [blind, ask, registerScreen]);
+  }, [voiceOn, ask, registerScreen]);
 
   const content = strip ?? (
     <>
@@ -99,14 +100,14 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, hideCap, ch
           <button type="button" className={`hz-cs${capHidden ? " hz-hide" : ""}`} role="status" aria-live="polite" dir={lang === "ur" ? "rtl" : "ltr"} onClick={tapRepeat}>
             {content}
           </button>
-          {!hideMic && <MicLine />}
+          {!hideMic && voiceOn && <MicLine />}
         </>
       ) : (
         <div className={`hz-cs${capHidden ? " hz-hide" : ""}`} role="status" aria-live="polite">{content}</div>
       )}
       <div className="hz-ct">{children}</div>
       {actions && <div className="hz-ac">{actions}</div>}
-      {blind && <MicStatusLine />}
+      {voiceOn && <MicStatusLine />}
     </>
   );
 }
@@ -204,6 +205,8 @@ function ChooseLanguage() {
   };
   const choose = (l: Lang) => {
     setLang(l);
+    // Volunteers choose by tap only: no spoken confirm step.
+    if (!blindUser) { go(afterLanguage(s.role)); return; }
     press(`lang-${l}`, (x) => x.L_selected(l), () => go(afterLanguage(s.role)), l);
   };
   const voice: ScreenVoice = {
@@ -1087,16 +1090,19 @@ export function Prototype() {
     mic, setMic, voiceRef, voice, markVoiceOff, markBlocked, blocked, markVoiceOk, hear,
   };
 
+  // Choose language for a volunteer: no voice at all, taps work as normal.
+  const volunteerLang = screen === "L" && s.role === "volunteer";
   // Tapping empty space on a blind-user screen repeats the prompt and listens again.
   const onEmptyTap = (e: MouseEvent) => {
     // Start is not a blind-user screen, but its first tap anywhere starts the voice (and later taps repeat it).
     if (!blind && screen !== "A") return;
+    if (volunteerLang) return;
     if ((e.target as HTMLElement).closest("button, a, input, label, [role=radio], [role=switch]")) return;
     tapRepeat();
   };
   // Blind-user screens: a tap on any control never selects or navigates; it only repeats the prompt.
   // Start and volunteer screens (and Choose language for a volunteer) keep their taps.
-  const tapsHarmless = blind && screen !== "A" && !(screen === "L" && s.role === "volunteer");
+  const tapsHarmless = blind && screen !== "A" && !volunteerLang;
   const onControlTapCapture = (e: MouseEvent) => {
     if (!tapsHarmless) return;
     if (!(e.target as HTMLElement).closest("button, a, input, label, [role=button], [role=radio], [role=switch]")) return;
