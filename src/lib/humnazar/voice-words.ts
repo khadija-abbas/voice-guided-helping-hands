@@ -106,6 +106,13 @@ const CONFIRM_WORDS: [ConfirmWord, string[]][] = [
   ["repeat", ["repeat", "say again", "again", "dobara", "دوبارہ", "ریپیٹ"]],
   ["confirm", ["confirm", "confirmed", "yes", "yeah", "yep", "ok", "okay", "continue", "haan", "han", "ji", "تصدیق", "ہاں", "جی", "ٹھیک ہے", "ٹھیک", "آگے", "کنفرم", "اوکے"]],
 ];
+/** Screen-level "go back": back words first, then cancel words (a screen may ignore cancel). */
+export function parseBack(text: string): "back" | "cancel" | null {
+  if (has(text, ["back", "go back", "wapas", "واپس", "بیک"])) return "back";
+  if (has(text, ["cancel", "منسوخ", "کینسل"])) return "cancel";
+  return null;
+}
+
 /** Answer to "Say confirm or cancel". Also understands repeat and back. */
 export function parseConfirm(text: string): ConfirmWord | null {
   return CONFIRM_WORDS.find(([, w]) => has(text, w))?.[0] ?? null;

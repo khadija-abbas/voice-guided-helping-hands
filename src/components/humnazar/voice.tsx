@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Mu
 import { MIC_LINE } from "@/lib/humnazar/i18n";
 import { LISTEN_MS } from "@/lib/humnazar/logic";
 import { getMic, getMicServer, listen, reportHeard, stopListening, subscribeMic } from "@/lib/humnazar/speech";
-import { parseCmd, parseConfirm, type CmdWord } from "@/lib/humnazar/voice-words";
+import { parseBack, parseCmd, parseConfirm, type CmdWord } from "@/lib/humnazar/voice-words";
 import { useP, type AskOpts, type Say, type ScreenVoice } from "./context";
 import { Icon } from "./ui";
 
@@ -48,13 +48,13 @@ export function ArmHint({ id, listening }: { id: string; listening: boolean }) {
 
 /** Returns the screen's ask(); Frame runs it when the screen opens and registers it for repeat and cancel. */
 export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
-  const { say, langRef, voiceRef, markVoiceOff, hear, begin, isCurrent, clearArm, setMic, back } = useP();
+  const { say, langRef, voiceRef, markVoiceOff, hear, begin, isCurrent, clearArm, setMic, voiceBack } = useP();
   const vRef = useRef(voice);
   vRef.current = voice;
   const spokenRef = useRef(spoken);
   spokenRef.current = spoken;
-  const backRef = useRef(back);
-  backRef.current = back;
+  const backRef = useRef(voiceBack);
+  backRef.current = voiceBack;
 
   const ask = useCallback(async (o: AskOpts = {}): Promise<void> => {
     const token = begin();
@@ -68,7 +68,11 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
     if (mode !== "listen") {
       const v = vRef.current;
       if (v?.prompt) ok = await v.prompt();
-      else ok = await say((x, l) => [mode === "full" ? spokenRef.current(x, l) : "", v?.q ? v.q(x, l) : ""].filter(Boolean).join(" "));
+      else {
+        // Screens that listen end their prompt with "Say back to go back." (not Home or Ask Later sent).
+        const hint = !!v && (!!v.parse || !!v.cmds) && !v.noBackHint;
+        ok = await say((x, l) => [mode === "full" ? spokenRef.current(x, l) : "", v?.q ? v.q(x, l) : "", hint ? x.backHint : ""].filter(Boolean).join(" "));
+      }
       if (!ok || !isCurrent(token)) return;
     }
     if (!vRef.current || (!vRef.current.parse && !vRef.current.cmds)) return;
@@ -84,8 +88,10 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
         const key = hit ? null : parseCmd(alt, Object.keys(v.cmds ?? {}) as CmdWord[]);
         const run = hit ?? (key ? v.cmds?.[key] : undefined);
         if (run) return { run };
-        const nav = parseConfirm(alt);
-        return nav === "repeat" || nav === "back" ? nav : null;
+        // "back", "cancel", "واپس" or "منسوخ" go to the previous screen (Home ignores "cancel").
+        const b = parseBack(alt);
+        if (b === "back" || (b === "cancel" && !v.ignoreCancel)) return "back";
+        return parseConfirm(alt) === "repeat" ? "repeat" : null;
       },
       retry: () => {
         const v = vRef.current;

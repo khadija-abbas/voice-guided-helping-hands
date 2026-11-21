@@ -193,10 +193,13 @@ function StartScreen() {
 function ChooseLanguage() {
   const { s, go, say, press, setLang, armed, armListening } = useP();
   /** Speaks the English line, then the Urdu line when an Urdu voice is installed. */
+  const blindUser = s.role !== "volunteer";
   const both = async (k: "prompt" | "retry") => {
-    const ok = await say(() => LANG_SCREEN[k].en, "en");
+    // Blind users hear "Say back to go back." at the end of the prompt, in each language.
+    const hint = (l: Lang) => (k === "prompt" && blindUser ? ` ${STRINGS[l].backHint}` : "");
+    const ok = await say(() => LANG_SCREEN[k].en + hint("en"), "en");
     if (!ok || !hasUrduVoice()) return ok;
-    return say(() => LANG_SCREEN[k].ur, "ur");
+    return say(() => LANG_SCREEN[k].ur + hint("ur"), "ur");
   };
   const choose = (l: Lang) => {
     setLang(l);
@@ -208,6 +211,7 @@ function ChooseLanguage() {
     parse: (x) => { const l = parseLanguage(x); return l ? () => choose(l) : null; },
     // Language is unknown here: the first try listens in Urdu, the second in English.
     listenLang: (attempt) => (attempt === 0 ? "ur" : "en"),
+    ignoreCancel: !blindUser,
   };
   const opt = (l: Lang, label: string) => (
     <div className="hz-cf">
@@ -240,7 +244,7 @@ function Home() {
   const needHelp = () => { set((s) => ({ ...s, request: freshRequest() })); go("D"); };
   return (
     <Frame title={t.B_title} cap={(x) => x.B_cap}
-      voice={{ q: (x) => x.B_q, options: (x) => x.B_opts, parse: (x) => (parseNeedHelp(x) ? () => press("needHelp", (y) => y.cf.needHelp, needHelp) : null) }}>
+      voice={{ q: (x) => x.B_q, options: (x) => x.B_opts, ignoreCancel: true, noBackHint: true, parse: (x) => (parseNeedHelp(x) ? () => press("needHelp", (y) => y.cf.needHelp, needHelp) : null) }}>
       <NotForEmergencies />
       <div className="hz-gr">
         <ConfirmBtn id="needHelp" msg={(x) => x.cf.needHelp} onConfirm={needHelp}>{t.B_help}</ConfirmBtn>
@@ -719,7 +723,7 @@ function AskLaterSent() {
   return (
     <>
       <Frame title={t.YC_title} cap={(x, l) => (ntf ? x.YC_ntf(vName(ASK_LATER_REPLIER, l)) : x.YC_cap(no))} spoken={(x) => x.YC_cap(spellRequestNumber(no))}
-        {...(ntf ? { voice: { q: (x, l) => x.YC_ntfSay(vName(ASK_LATER_REPLIER, l)), cmds: { open: () => press("yc-ntf", openMsg, open) } } } : {})}>
+        {...(ntf ? { voice: { noBackHint: true, q: (x, l) => x.YC_ntfSay(vName(ASK_LATER_REPLIER, l)), cmds: { open: () => press("yc-ntf", openMsg, open) } } } : {})}>
         <StatusCard label={t.status} status={t.stSent} numberLabel={t.requestNo} number={no} sample={t.sample} />
       </Frame>
       {ntf && (
@@ -877,7 +881,8 @@ const SCREENS: Record<ScreenId, () => ReactNode> = {
 
 /* ---------- Shell ---------- */
 
-type Arm = { id: string; msg: Say; action: () => void; lang?: Lang | undefined };
+/** onBack "repeat": saying back during this confirm asks the same question again (Live call's "End the call?"). */
+type Arm = { id: string; msg: Say; action: () => void; lang?: Lang | undefined; onBack?: "repeat" };
 
 export function Prototype() {
   const [s, setS] = useState<Session>(initialSession);
@@ -995,7 +1000,10 @@ export function Prototype() {
     if (r.hit === "confirm") { clearArm(); a.action(); return; }
     if (r.hit === "cancel") { clearArm(); reask({ mode: "question" }); return; }
     if (r.hit === "repeat") { void runConfirm(a); return; }
-    if (r.hit === "back") { clearArm(); backRef.current(); return; }
+    if (r.hit === "back") {
+      if (a.onBack === "repeat") { void runConfirm(a); return; }
+      clearArm(); backRef.current(); return;
+    }
   }, [begin, isCurrent, setMic, say, hear, clearArm, reask]);
 
   const press = useCallback<Ctx["press"]>((id, msg, action, lang) => {
@@ -1036,18 +1044,26 @@ export function Prototype() {
     if (screen === "M") go("R", { reset: [...HOME, "R"], anim: "fade" });
     else go("VT", { reset: ["A", "VT"], anim: "fade" });
   }, [screen, go]);
+  const pop = useCallback(() => {
+    leave();
+    setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
+    setAnim("back");
+    setNavKey((k) => k + 1);
+  }, [leave]);
   const back = useCallback(() => {
     if (screen === "M" || screen === "VM") {
       leave();
       setConfirm(true);
       return;
     }
-    leave();
-    setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
-    setAnim("back");
-    setNavKey((k) => k + 1);
-  }, [screen, leave]);
-  backRef.current = back;
+    pop();
+  }, [screen, leave, pop]);
+  // Spoken "back": on Live call it asks "End the call? Say confirm or cancel." and goes back only on confirm.
+  const voiceBack = useCallback(() => {
+    if (screen === "M") { void runConfirm({ id: "m-back", msg: (x) => x.M_backQ, action: pop, onBack: "repeat" }); return; }
+    back();
+  }, [screen, runConfirm, pop, back]);
+  backRef.current = voiceBack;
   const closeDialog = useCallback(() => {
     leave();
     setConfirm(false);
@@ -1065,7 +1081,7 @@ export function Prototype() {
   const Screen = SCREENS[screen];
   const set = useCallback((fn: (s: Session) => Session) => setS(fn), []);
   const ctx: Ctx = {
-    t, lang: s.lang, langRef, setLang, s, blind, set, go, back, confirmEnd: () => setConfirm(true),
+    t, lang: s.lang, langRef, setLang, s, blind, set, go, back, voiceBack, confirmEnd: () => setConfirm(true),
     say, press, armed, armListening, tapRepeat, reask, registerScreen, begin, isCurrent, clearArm,
     mic, setMic, voiceRef, voice, markVoiceOff, markBlocked, blocked, markVoiceOk, hear,
   };

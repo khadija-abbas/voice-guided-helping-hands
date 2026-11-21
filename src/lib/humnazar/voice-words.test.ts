@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber } from "./voice-words";
+import { parseBack, parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber } from "./voice-words";
 
 describe("spoken answers", () => {
   it("helper words in English and Urdu", () => {
@@ -179,5 +179,24 @@ describe("Quick Look photo and Choose helper: contains matching on the heard tex
     expect(parseStartRole("رضاکار")).toBe("volunteer");
     expect(parseStartRole("والنٹیر")).toBe("volunteer");
     expect(parseStartRole("banana")).toBeNull();
+  });
+
+  it("back and cancel words go back from a screen", () => {
+    expect(parseBack("back")).toBe("back");
+    expect(parseBack("go back please")).toBe("back");
+    expect(parseBack("واپس")).toBe("back");
+    expect(parseBack("cancel")).toBe("cancel");
+    expect(parseBack("منسوخ")).toBe("cancel");
+    // "back" wins when both are heard, so Home (which ignores cancel) still goes back.
+    expect(parseBack("cancel go back")).toBe("back");
+    expect(parseBack("backpack")).toBeNull();
+    expect(parseBack("no")).toBeNull();
+  });
+
+  it("in the confirm step, cancel stays and back goes back", () => {
+    expect(parseConfirm("cancel")).toBe("cancel");
+    expect(parseConfirm("منسوخ")).toBe("cancel");
+    expect(parseConfirm("back")).toBe("back");
+    expect(parseConfirm("واپس")).toBe("back");
   });
 });

@@ -47,6 +47,10 @@ export interface ScreenVoice {
   listenLang?: (attempt: number) => Lang;
   /** Words to offer when something was heard but did not match: "I heard … Please say <options>." */
   options?: Say;
+  /** Home: the word "cancel" does not go back there. */
+  ignoreCancel?: boolean;
+  /** Home and Ask Later sent: no "Say back to go back." at the end of the prompt. */
+  noBackHint?: boolean;
 }
 /** full = caption + question, question = question only, listen = no speech. pre is spoken first. */
 export interface AskOpts { mode?: "full" | "question" | "listen"; pre?: Say }
@@ -77,6 +81,8 @@ export interface Ctx {
   set: (fn: (s: Session) => Session) => void;
   go: (to: ScreenId, opts?: { replace?: boolean; reset?: ScreenId[]; anim?: Anim }) => void;
   back: () => void;
+  /** Spoken "back": goes to the previous screen; on Live call it first asks "End the call? Say confirm or cancel." */
+  voiceBack: () => void;
   confirmEnd: () => void;
   say: (build: Say, langOverride?: Lang) => Promise<boolean>;
   /** Voice confirm: the first choice speaks what it does and listens for confirm or cancel; a second tap is a silent fallback. */
