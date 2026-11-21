@@ -151,7 +151,8 @@ export function ListenRow<T>({ question, parse, onValue, startSignal }: {
     if (voiceRef.current === "off") { void markVoiceOff(); return; }
     void askRef.current();
   }, [startSignal, voiceRef, markVoiceOff]);
-  if (voice === "off") return <p className="hz-note" role="status">{t.voiceOff}</p>;
+  // Choices are already big buttons; the one-time "voice is off" message is spoken by markVoiceOff.
+  if (voice === "off") return null;
   return (
     <button type="button" className={`hz-row${status === "listening" ? " is-listening" : ""}`} onClick={() => void ask(question)} aria-label={`${t.sayChoice}. ${t.tapToSpeak}`}>
       <span className="tx">

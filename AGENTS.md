@@ -33,3 +33,4 @@ use the editor.
 - The prototype is one route (`/`) driving an in-memory screen stack in `src/components/humnazar/Prototype.tsx`; screens are not separate routes because the flow keeps session state and slide/fade transitions inside one phone frame.
 - Flow rules (who accepts, timing, request numbers) live in `src/lib/humnazar/logic.ts` with tests beside it; all copy lives in `src/lib/humnazar/i18n.ts` with matching English and Urdu keys.
 - Humnazar styles are `hz-` prefixed component classes on tokens in `src/styles.css`; components never use raw colours.
+- Blind-user screens are voice-first: speech and recognition go through `src/lib/humnazar/speech.ts`, spoken-word parsing through `src/lib/humnazar/voice-words.ts` (tested), and forward actions through the two-press `ConfirmBtn`/`press` in `src/components/humnazar/voice.tsx`; Start and volunteer screens opt out via `VOLUNTEER_SCREENS` so they stay unchanged.
