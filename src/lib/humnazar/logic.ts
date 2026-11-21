@@ -102,9 +102,21 @@ export function formatSeconds(s: number): string {
 }
 
 export type Role = "user" | "volunteer";
-/** Both roles choose a language straight after Start; then users go Home and volunteers to the WhatsApp message. */
-export function afterLanguage(role: Role): "B" | "V1" {
+/** Both roles choose a language straight after Start; then users go Home and volunteers to the WhatsApp message.
+ *  In sign-up, a blind user continues to the Terms step instead of Home. */
+export function afterLanguage(role: Role, signup = false): "B" | "V1" | "TS" {
+  if (signup && role === "user") return "TS";
   return role === "user" ? "B" : "V1";
 }
+/** After Start: log in goes to Choose language for both roles; sign-up sends a volunteer to "coming next". */
+export function afterStart(signup: boolean, role: Role): "L" | "VS" {
+  return signup && role === "volunteer" ? "VS" : "L";
+}
+
+/* ---------- Blind-user sign-up (sample data only, nothing is stored) ---------- */
+export type Gender = "woman" | "man" | "none";
+export const SETUP_STEPS = 5;
+/** A CNIC is never shown: every spoken CNIC is displayed as this fixed mask. */
+export const MASKED_CNIC = "•••••-•••••••-•";
 /** How long the app listens for each spoken answer. */
 export const LISTEN_MS = 8000;

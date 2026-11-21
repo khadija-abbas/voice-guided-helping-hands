@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBack, parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber } from "./voice-words";
+import { parseAccept, parseFreeAnswer, parseGender, parseBack, parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber } from "./voice-words";
 
 describe("spoken answers", () => {
   it("helper words in English and Urdu", () => {
@@ -198,5 +198,34 @@ describe("Quick Look photo and Choose helper: contains matching on the heard tex
     expect(parseConfirm("منسوخ")).toBe("cancel");
     expect(parseConfirm("back")).toBe("back");
     expect(parseConfirm("واپس")).toBe("back");
+  });
+});
+
+describe("sign-up answers", () => {
+  it("terms accept words", () => {
+    expect(parseAccept("I accept")).toBe(true);
+    expect(parseAccept("accept")).toBe(true);
+    expect(parseAccept("yes")).toBe(true);
+    expect(parseAccept("قبول ہے")).toBe(true);
+    expect(parseAccept("ہاں")).toBe(true);
+    expect(parseAccept("I do not accept")).toBe(false);
+    expect(parseAccept("read again")).toBe(false);
+  });
+  it("gender words; woman never matches man", () => {
+    expect(parseGender("woman")).toBe("woman");
+    expect(parseGender("خاتون")).toBe("woman");
+    expect(parseGender("man")).toBe("man");
+    expect(parseGender("مرد")).toBe("man");
+    expect(parseGender("I prefer not to say")).toBe("none");
+    expect(parseGender("skip")).toBe("none");
+    expect(parseGender("نہیں بتانا")).toBe("none");
+    expect(parseGender("banana")).toBeNull();
+  });
+  it("verification takes any speech but keeps back and repeat", () => {
+    expect(parseFreeAnswer("Pakistan Association of the Blind")).toBe("Pakistan Association of the Blind");
+    expect(parseFreeAnswer("back")).toBeNull();
+    expect(parseFreeAnswer("cancel")).toBeNull();
+    expect(parseFreeAnswer("repeat")).toBeNull();
+    expect(parseFreeAnswer("  ")).toBeNull();
   });
 });

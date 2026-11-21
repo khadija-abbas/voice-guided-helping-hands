@@ -1,6 +1,6 @@
 // Shared voice controller (Web Speech API): one speech queue and ONE reused SpeechRecognition
 // for the whole app. Only call from effects or event handlers.
-import type { Lang } from "./logic";
+import { MASKED_CNIC, type Lang } from "./logic";
 
 const RATE = 0.9;
 /** Pause between the end of speech and the start of recognition. */
@@ -41,10 +41,17 @@ function vlog(state: string, extra: Record<string, unknown> = {}): void {
   if (typeof console !== "undefined") console.info("[voice]", { screen: activeScreen, state, ...extra });
 }
 
+let privateResults = false;
+/** While on (the CNIC answer), heard text is masked on the status line and never written to the console. */
+export function setPrivateListening(on: boolean): void {
+  privateResults = on;
+}
+
 /** Screens report what they did with a result: matched a command, or not. showText keeps "heard '…'" on a mismatch. */
 export function reportHeard(text: string, matched: boolean, showText = false): void {
-  setStatus(matched || showText ? { s: "heard", text } : { s: "nomatch" });
-  vlog(matched ? "heard" : "no-match", { text });
+  const shown = privateResults ? MASKED_CNIC : text;
+  setStatus(matched || showText ? { s: "heard", text: shown } : { s: "nomatch" });
+  vlog(matched ? "heard" : "no-match", { text: shown });
 }
 
 /* ---------- Screen ids ---------- */
@@ -329,7 +336,7 @@ export async function listen(lang: Lang, timeoutMs = 6000): Promise<ListenResult
       onResult: (alts) => {
         gotResult = true;
         if (screen !== activeScreen) { vlog("stale-result-ignored", { session: idx }); settle({ status: "aborted" }); return; }
-        vlog("result", { alternatives: alts });
+        vlog("result", { alternatives: privateResults ? "[hidden]" : alts });
         settle({ status: "ok", text: alts[0] ?? "", alternatives: alts });
       },
       onError: (code) => {

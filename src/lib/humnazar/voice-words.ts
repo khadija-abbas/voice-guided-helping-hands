@@ -1,5 +1,5 @@
 // Spoken-answer parsing for the blind-user screens. Accepts English and Urdu words.
-import type { Helper, Lang, SampleItemId } from "./logic";
+import type { Gender, Helper, Lang, SampleItemId } from "./logic";
 
 export type HelpTypeWord = "quick" | "call" | "later";
 
@@ -194,4 +194,28 @@ export function parseCallEnded(text: string): CallEndedCmd | null {
   if (has(text, FRIEND_YES)) return { k: "friend", yes: true };
   const n = parseRating(text);
   return n ? { k: "rate", n } : null;
+}
+
+/* ---------- Blind-user sign-up ---------- */
+
+const ACCEPT = ["i accept", "accept", "yes", "قبول ہے", "ہاں"];
+const NOT = ["no", "not", "don't", "dont", "نہیں"];
+/** Terms: "I accept", "accept", "yes", "قبول ہے" or "ہاں" (never when a "no"/"not" is heard). */
+export function parseAccept(text: string): boolean {
+  return has(text, ACCEPT) && !has(text, NOT);
+}
+
+/** Gender: "prefer not to say" is checked first, then woman, then man (whole words only). */
+export function parseGender(text: string): Gender | null {
+  if (contains(text, ["prefer not to say", "skip", "نہیں بتانا"])) return "none";
+  if (contains(text, ["woman", "خاتون"])) return "woman";
+  if (has(text, ["man", "مرد"])) return "man";
+  return null;
+}
+
+/** Verification accepts any speech, except back, cancel and repeat words (those keep their usual meaning). */
+export function parseFreeAnswer(text: string): string | null {
+  const t = text.trim();
+  if (!t || parseBack(t) || parseConfirm(t) === "repeat") return null;
+  return t;
 }

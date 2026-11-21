@@ -45,7 +45,7 @@ describe("Humnazar sample rules", () => {
   });
 });
 
-import { afterLanguage, LISTEN_MS } from "./logic";
+import { afterLanguage, afterStart, LISTEN_MS, MASKED_CNIC } from "./logic";
 
 describe("language is asked first", () => {
   it("a blind or low-vision user goes Home after choosing a language", () => {
@@ -56,5 +56,24 @@ describe("language is asked first", () => {
   });
   it("listens up to 8 seconds for a spoken answer", () => {
     expect(LISTEN_MS).toBe(8000);
+  });
+});
+
+describe("sign-up", () => {
+  it("log in opens Choose language for both roles", () => {
+    expect(afterStart(false, "user")).toBe("L");
+    expect(afterStart(false, "volunteer")).toBe("L");
+  });
+  it("sign up: a blind user goes to Choose language, a volunteer to 'coming next'", () => {
+    expect(afterStart(true, "user")).toBe("L");
+    expect(afterStart(true, "volunteer")).toBe("VS");
+  });
+  it("sign up: after choosing a language a blind user goes to Terms, not Home", () => {
+    expect(afterLanguage("user", true)).toBe("TS");
+    expect(afterLanguage("user", false)).toBe("B");
+  });
+  it("a CNIC is always shown as •••••-•••••••-• with no digits", () => {
+    expect(MASKED_CNIC).toBe("•••••-•••••••-•");
+    expect(MASKED_CNIC).not.toMatch(/\d/);
   });
 });
