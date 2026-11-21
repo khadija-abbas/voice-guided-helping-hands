@@ -557,6 +557,19 @@ export const LANG_SCREEN = {
   english: "English",
 } as const;
 
+/** Start screen: shown before a role or language is chosen; spoken in English, then Urdu when an Urdu voice exists. */
+export const START_VOICE = {
+  prompt: {
+    en: "Choose one. Say 'blind user' if you are a blind or low-vision user. Say 'volunteer' if you are a volunteer.",
+    ur: "ایک منتخب کریں۔ اگر آپ نابینا یا کم بینائی کے صارف ہیں تو \"صارف\" کہیں۔ اگر آپ رضاکار ہیں تو \"رضاکار\" کہیں۔",
+  },
+  readsAloud: "Reads aloud:",
+  tapHint: "Tap anywhere to hear the options.",
+  selected: (role: "user" | "volunteer") => `${role === "user" ? "Blind user" : "Volunteer"} selected.`,
+  heardSay: (heard: string) => `I heard ${heard}. Please say blind user or volunteer.`,
+  notHeard: "I did not hear you. Please say blind user or volunteer.",
+} as const;
+
 export const STRINGS: Record<Lang, Dict> = { en, ur };
 
 /** Evaluator status line at the bottom of blind-user screens; English in both languages on purpose. */

@@ -300,6 +300,8 @@
   .hz-gr .hz-cf > .hz-bt { flex: 1; }
   .hz-ntf .hz-armhint { margin-top: 4px; }
   .hz-mic { margin: 8px 24px 0; flex: none; }
+  .hz-taphint { margin: 0; text-align: center; }
+  .hz-ac .hz-micst { margin: 0; }
   .hz-micst { flex: none; margin: 0 24px 8px; padding-top: 6px; border-top: 1px solid var(--hz-n200); font: 600 14px/20px var(--font-mono, ui-monospace, monospace); color: var(--hz-n700); }
   .hz-micst.err { color: var(--hz-er); }
   .hz-bi { display: flex; flex-direction: column; gap: 4px; flex: 1; }

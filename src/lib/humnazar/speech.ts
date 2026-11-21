@@ -41,9 +41,9 @@ function vlog(state: string, extra: Record<string, unknown> = {}): void {
   if (typeof console !== "undefined") console.info("[voice]", { screen: activeScreen, state, ...extra });
 }
 
-/** Screens report what they did with a result: matched a command, or not. */
-export function reportHeard(text: string, matched: boolean): void {
-  setStatus(matched ? { s: "heard", text } : { s: "nomatch" });
+/** Screens report what they did with a result: matched a command, or not. showText keeps "heard '…'" on a mismatch. */
+export function reportHeard(text: string, matched: boolean, showText = false): void {
+  setStatus(matched || showText ? { s: "heard", text } : { s: "nomatch" });
   vlog(matched ? "heard" : "no-match", { text });
 }
 

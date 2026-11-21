@@ -34,6 +34,13 @@ export function parseHelper(text: string): Helper | null {
   return null;
 }
 
+/** Start screen: "contains" matching; blind or low-vision user is checked before volunteer. */
+export function parseStartRole(text: string): "user" | "volunteer" | null {
+  if (contains(text, ["blind", "user", "low vision", "نابینا", "صارف", "اندھا"])) return "user";
+  if (contains(text, ["volunteer", "helper", "رضاکار", "والنٹیر"])) return "volunteer";
+  return null;
+}
+
 export function parseLanguage(text: string): Lang | null {
   if (has(text, ["urdu", "اردو"])) return "ur";
   if (has(text, ["english", "inglish", "angrezi", "انگریزی", "انگلش", "انگلیش"])) return "en";

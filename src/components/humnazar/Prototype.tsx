@@ -4,7 +4,7 @@ import spiceImg from "@/assets/sample-spice-packet.jpg";
 import medicineImg from "@/assets/sample-medicine-strip.jpg";
 import shirtImg from "@/assets/sample-shirts.jpg";
 import billImg from "@/assets/sample-gas-bill.jpg";
-import { LANG_SCREEN, STRINGS } from "@/lib/humnazar/i18n";
+import { LANG_SCREEN, START_VOICE, STRINGS } from "@/lib/humnazar/i18n";
 import {
   acceptAtSecondsLeft,
   acceptingVolunteer,
@@ -26,7 +26,7 @@ import {
   type SampleItemId,
 } from "@/lib/humnazar/logic";
 import { cancelSpeech, closeScreen, hasUrduVoice, listen, openScreen, recognitionSupported, reportHeard, speak, stopListening } from "@/lib/humnazar/speech";
-import { parseCallEnded, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseHelpType, parseNeedHelp, parseStartCall, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
+import { parseCallEnded, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseHelpType, parseNeedHelp, parseStartCall, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
 import {
   PrototypeContext, useP,
   type Anim, type AskOpts, type Ctx, type HearOpts, type HearResult, type Mic, type Mode, type Request, type Say, type ScreenId, type ScreenVoice, type Session, type VoiceState,
@@ -114,15 +114,71 @@ function NotForEmergencies() {
 
 const vName = (id: string | null, lang: Lang) => (id ? volunteer(id).name[lang] : "");
 
-/* ---------- Start (unchanged, except it now opens Choose language) ---------- */
+/* ---------- Start: tap anywhere starts the voice (browsers block speech until a tap) ---------- */
+
+/** Listening rounds per tap (each round: en-US, then ur-PK); then the user taps again. */
+const START_ROUNDS = 3;
 
 function StartScreen() {
-  const { t, go, set } = useP();
+  const { t, go, set, say, begin, isCurrent, registerScreen, voiceRef, markVoiceOff, markBlocked, markVoiceOk } = useP();
+  const choose = useCallback((role: "user" | "volunteer") => { set((s) => ({ ...s, role })); go("L"); }, [set, go]);
+
+  const ask = useCallback(async (): Promise<void> => {
+    const token = begin();
+    stopListening();
+    const en = (text: string) => say(() => text, "en");
+    let ok = await en(START_VOICE.prompt.en);
+    if (!ok || !isCurrent(token)) return;
+    if (hasUrduVoice()) {
+      ok = await say(() => START_VOICE.prompt.ur, "ur");
+      if (!ok || !isCurrent(token)) return;
+    }
+    for (let round = 0; round < START_ROUNDS; round++) {
+      if (voiceRef.current === "off") { await markVoiceOff(); return; }
+      let heard = "";
+      // Listen in English first; when nothing matches, listen once more in Urdu.
+      for (const lang of ["en", "ur"] as const) {
+        const r = await listen(lang, LISTEN_MS);
+        if (!isCurrent(token) || r.status === "aborted") return;
+        if (r.status === "blocked") { await markBlocked(); return; }
+        if (r.status === "unavailable") { await markVoiceOff(); return; }
+        if (r.status !== "ok") continue;
+        markVoiceOk();
+        for (const alt of r.alternatives) {
+          const role = parseStartRole(alt);
+          if (!role) continue;
+          reportHeard(alt, true);
+          await en(START_VOICE.selected(role));
+          if (isCurrent(token)) choose(role);
+          return;
+        }
+        heard = r.text.trim() || heard;
+        reportHeard(r.text, false, true);
+      }
+      const last = round === START_ROUNDS - 1;
+      ok = await en(last ? START_VOICE.tapHint : heard ? START_VOICE.heardSay(heard) : START_VOICE.notHeard);
+      if (!ok || !isCurrent(token) || last) return;
+    }
+  }, [begin, say, isCurrent, voiceRef, markVoiceOff, markBlocked, markVoiceOk, choose]);
+
+  // Nothing speaks on open; the shell's tap-anywhere handler calls ask() through registerScreen.
+  useEffect(() => {
+    const id = openScreen();
+    registerScreen(() => ask());
+    return () => { closeScreen(id); registerScreen(null); };
+  }, [ask, registerScreen]);
+
   return (
-    <Frame noBack title={t.A_title} caption={t.A_cap}
+    <Frame noBack title={t.A_title}
+      strip={<>
+        <Icon n="sp" s={20} />
+        <span dir="ltr" lang="en"><b>{START_VOICE.readsAloud}</b> {START_VOICE.prompt.en}</span>
+      </>}
       actions={<>
-        <Btn onClick={() => { set((s) => ({ ...s, role: "user" })); go("L"); }}>{t.A_user}</Btn>
-        <Btn kind="s" onClick={() => { set((s) => ({ ...s, role: "volunteer" })); go("L"); }}>{t.A_vol}</Btn>
+        <Btn onClick={() => choose("user")}>{t.A_user}</Btn>
+        <Btn kind="s" onClick={() => choose("volunteer")}>{t.A_vol}</Btn>
+        <p className="hz-note hz-taphint" dir="ltr" lang="en">{START_VOICE.tapHint}</p>
+        <MicStatusLine />
       </>}>
       <Notice v="i" icon="in">{t.A_info}</Notice>
     </Frame>
@@ -1013,7 +1069,8 @@ export function Prototype() {
 
   // Tapping empty space on a blind-user screen repeats the prompt and listens again.
   const onEmptyTap = (e: MouseEvent) => {
-    if (!blind) return;
+    // Start is not a blind-user screen, but its first tap anywhere starts the voice (and later taps repeat it).
+    if (!blind && screen !== "A") return;
     if ((e.target as HTMLElement).closest("button, a, input, label, [role=radio], [role=switch]")) return;
     tapRepeat();
   };

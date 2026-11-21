@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber } from "./voice-words";
+import { parseCallEnded, parseCmd, parseConfirm, parseEndCall, parseHelper, parseHelperCmd, parseNeedHelp, parseStartCall, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseStartRole, parseYesNo, spellRequestNumber } from "./voice-words";
 
 describe("spoken answers", () => {
   it("helper words in English and Urdu", () => {
@@ -166,5 +166,18 @@ describe("Quick Look photo and Choose helper: contains matching on the heard tex
     expect(parseHelper("men")).toBe("man");
     expect(parseHelper("anybody")).toBe("anyone");
     expect(parseHelper("command")).toBeNull();
+  });
+
+  it("Start screen: blind user or volunteer, matched anywhere in the heard text", () => {
+    expect(parseStartRole("I am a Blind user.")).toBe("user");
+    expect(parseStartRole("low vision")).toBe("user");
+    expect(parseStartRole("میں نابینا ہوں")).toBe("user");
+    expect(parseStartRole("صارف")).toBe("user");
+    expect(parseStartRole("اندھا")).toBe("user");
+    expect(parseStartRole("Volunteer!")).toBe("volunteer");
+    expect(parseStartRole("I'm a helper")).toBe("volunteer");
+    expect(parseStartRole("رضاکار")).toBe("volunteer");
+    expect(parseStartRole("والنٹیر")).toBe("volunteer");
+    expect(parseStartRole("banana")).toBeNull();
   });
 });
