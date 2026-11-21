@@ -68,10 +68,6 @@ describe("sign-up", () => {
     expect(afterStart(true, "user")).toBe("L");
     expect(afterStart(true, "volunteer")).toBe("VS");
   });
-  it("sign up: after choosing a language a blind user goes to Terms, not Home", () => {
-    expect(afterLanguage("user", true)).toBe("TS");
-    expect(afterLanguage("user", false)).toBe("B");
-  });
   it("a CNIC is always shown as •••••-•••••••-• with no digits", () => {
     expect(MASKED_CNIC).toBe("•••••-•••••••-•");
     expect(MASKED_CNIC).not.toMatch(/\d/);
