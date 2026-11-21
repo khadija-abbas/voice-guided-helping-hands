@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 
 import spiceImg from "@/assets/sample-spice-packet.jpg";
 import medicineImg from "@/assets/sample-medicine-strip.jpg";
 import shirtImg from "@/assets/sample-shirts.jpg";
 import billImg from "@/assets/sample-gas-bill.jpg";
-import { STRINGS, type Strings } from "@/lib/humnazar/i18n";
+import { LANG_SCREEN, STRINGS } from "@/lib/humnazar/i18n";
 import {
   acceptAtSecondsLeft,
   acceptingVolunteer,
+  afterLanguage,
   ASK_LATER_REPLIER,
   canWiden,
   demoTickMs,
   formatSeconds,
+  LISTEN_MS,
   makeRequestNumber,
   matchingVolunteers,
   needsHuman,
@@ -24,17 +26,22 @@ import {
   type SampleItemId,
 } from "@/lib/humnazar/logic";
 import { cancelSpeech, hasUrduVoice, listen, recognitionSupported, speak, stopListening } from "@/lib/humnazar/speech";
-import { parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
-import { PrototypeContext, useP, type Anim, type Ctx, type Mode, type Request, type Say, type ScreenId, type Session, type VoiceState } from "./context";
-import { ArmHint, ConfirmBtn, ListenRow, VoiceRow } from "./voice";
+import { parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
+import {
+  PrototypeContext, useP,
+  type Anim, type AskOpts, type Ctx, type Mic, type Mode, type Request, type Say, type ScreenId, type ScreenVoice, type Session, type VoiceState,
+} from "./context";
+import { ArmHint, ConfirmBtn, ListenRow, MicLine, useScreenAsk, VoiceRow } from "./voice";
 import { Btn, Camera, Icon, Notice, StatusCard, Tip, Toggle } from "./ui";
 
 const IMG: Record<SampleItemId, string> = { spice: spiceImg, medicine: medicineImg, shirt: shirtImg, bill: billImg };
 const VOLUNTEER_SCREENS: ScreenId[] = ["A", "V1", "V2x", "V3", "V5", "VM", "VT"];
+const HOME: ScreenId[] = ["A", "L", "B"];
 
 const freshRequest = (): Request => ({ number: null, photo: null, widened: false, volunteerId: null });
 
 const initialSession: Session = {
+  role: "user",
   lang: "en",
   helper: "friend",
   lastMode: null,
@@ -48,27 +55,24 @@ const initialSession: Session = {
 
 /* ---------- Frame ---------- */
 
-function Frame({ title, caption, cap, spoken, onSpoken, children, actions, noBack }: {
-  title: string; caption?: string; cap?: Say; spoken?: Say; onSpoken?: () => void;
+function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, actions, noBack }: {
+  title: string; caption?: string; cap?: Say; spoken?: Say; voice?: ScreenVoice; strip?: ReactNode; hideMic?: boolean;
   children?: ReactNode; actions?: ReactNode; noBack?: boolean;
 }) {
-  const { t, lang, back, blind, say } = useP();
+  const { t, lang, back, blind, registerScreen, tapRepeat } = useP();
   const text = cap ? cap(t, lang) : (caption ?? "");
   const speech = spoken ?? cap ?? (() => text);
-  const speechRef = useRef(speech);
-  speechRef.current = speech;
-  const onSpokenRef = useRef(onSpoken);
-  onSpokenRef.current = onSpoken;
+  const ask = useScreenAsk(voice, speech);
 
-  // Every blind-user screen reads its caption aloud when it opens.
+  // Every blind-user screen speaks its caption and question when it opens, then listens.
   useEffect(() => {
     if (!blind) return;
-    let alive = true;
-    void say(speechRef.current).then((ok) => { if (ok && alive) onSpokenRef.current?.(); });
-    return () => { alive = false; };
-  }, [blind, say]);
+    registerScreen(ask);
+    void ask({ mode: "full" });
+    return () => registerScreen(null);
+  }, [blind, ask, registerScreen]);
 
-  const strip = (
+  const content = strip ?? (
     <>
       <Icon n="sp" s={20} />
       <span><b>{t.readsAloud}</b> {text}</span>
@@ -85,11 +89,14 @@ function Frame({ title, caption, cap, spoken, onSpoken, children, actions, noBac
         <h1 tabIndex={-1} data-screen-title dir={blind ? (lang === "ur" ? "rtl" : "ltr") : undefined}>{title}</h1>
       </div>
       {blind ? (
-        <button type="button" className="hz-cs" role="status" aria-live="polite" dir={lang === "ur" ? "rtl" : "ltr"} onClick={() => void say(speechRef.current)}>
-          {strip}
-        </button>
+        <>
+          <button type="button" className="hz-cs" role="status" aria-live="polite" dir={lang === "ur" ? "rtl" : "ltr"} onClick={tapRepeat}>
+            {content}
+          </button>
+          {!hideMic && <MicLine />}
+        </>
       ) : (
-        <div className="hz-cs" role="status" aria-live="polite">{strip}</div>
+        <div className="hz-cs" role="status" aria-live="polite">{content}</div>
       )}
       <div className="hz-ct">{children}</div>
       {actions && <div className="hz-ac">{actions}</div>}
@@ -104,17 +111,62 @@ function NotForEmergencies() {
 
 const vName = (id: string | null, lang: Lang) => (id ? volunteer(id).name[lang] : "");
 
-/* ---------- Start (unchanged) ---------- */
+/* ---------- Start (unchanged, except it now opens Choose language) ---------- */
 
 function StartScreen() {
-  const { t, go } = useP();
+  const { t, go, set } = useP();
   return (
     <Frame noBack title={t.A_title} caption={t.A_cap}
       actions={<>
-        <Btn onClick={() => go("B")}>{t.A_user}</Btn>
-        <Btn kind="s" onClick={() => go("V1")}>{t.A_vol}</Btn>
+        <Btn onClick={() => { set((s) => ({ ...s, role: "user" })); go("L"); }}>{t.A_user}</Btn>
+        <Btn kind="s" onClick={() => { set((s) => ({ ...s, role: "volunteer" })); go("L"); }}>{t.A_vol}</Btn>
       </>}>
       <Notice v="i" icon="in">{t.A_info}</Notice>
+    </Frame>
+  );
+}
+
+/* ---------- Choose language (both roles, bilingual) ---------- */
+
+function ChooseLanguage() {
+  const { s, go, say, press, setLang, armed, armListening } = useP();
+  /** Speaks the English line, then the Urdu line when an Urdu voice is installed. */
+  const both = async (k: "prompt" | "retry") => {
+    const ok = await say(() => LANG_SCREEN[k].en, "en");
+    if (!ok || !hasUrduVoice()) return ok;
+    return say(() => LANG_SCREEN[k].ur, "ur");
+  };
+  const choose = (l: Lang) => {
+    setLang(l);
+    press(`lang-${l}`, (x) => x.L_selected(l), () => go(afterLanguage(s.role)), l);
+  };
+  const voice: ScreenVoice = {
+    prompt: () => both("prompt"),
+    retry: () => both("retry"),
+    parse: (x) => { const l = parseLanguage(x); return l ? () => choose(l) : null; },
+    // Language is unknown here: the first try listens in Urdu, the second in English.
+    listenLang: (attempt) => (attempt === 0 ? "ur" : "en"),
+  };
+  const opt = (l: Lang, label: string) => (
+    <div className="hz-cf">
+      <button type="button" className="hz-bt hz-s hz-lang" lang={l} dir={l === "ur" ? "rtl" : "ltr"}
+        aria-describedby={armed === `lang-${l}` ? `hz-hint-lang-${l}` : undefined} onClick={() => choose(l)}>
+        {label}
+      </button>
+      {armed === `lang-${l}` && <ArmHint id={`lang-${l}`} listening={armListening} />}
+    </div>
+  );
+  return (
+    <Frame title={LANG_SCREEN.title.en} caption={LANG_SCREEN.prompt.en} voice={voice}
+      strip={<>
+        <Icon n="sp" s={20} />
+        <span className="hz-bi">
+          <span dir="ltr" lang="en"><b>{LANG_SCREEN.readsAloud.en}</b> {LANG_SCREEN.prompt.en}</span>
+          <span dir="rtl" lang="ur"><b>{LANG_SCREEN.readsAloud.ur}</b> {LANG_SCREEN.prompt.ur}</span>
+        </span>
+      </>}>
+      {opt("ur", LANG_SCREEN.urdu)}
+      {opt("en", LANG_SCREEN.english)}
     </Frame>
   );
 }
@@ -122,14 +174,14 @@ function StartScreen() {
 /* ---------- Blind or low-vision user (voice-first) ---------- */
 
 function Home() {
-  const { t, go, set } = useP();
+  const { t, go, set, press } = useP();
+  const needHelp = () => { set((s) => ({ ...s, request: freshRequest() })); go("D"); };
   return (
-    <Frame title={t.B_title} cap={(x) => x.B_cap}>
+    <Frame title={t.B_title} cap={(x) => x.B_cap}
+      voice={{ q: (x) => x.B_q, cmds: { help: () => press("needHelp", (x) => x.cf.needHelp, needHelp) } }}>
       <NotForEmergencies />
       <div className="hz-gr">
-        <ConfirmBtn id="needHelp" msg={(x) => x.cf.needHelp} onConfirm={() => { set((s) => ({ ...s, request: freshRequest() })); go("D"); }}>
-          {t.B_help}
-        </ConfirmBtn>
+        <ConfirmBtn id="needHelp" msg={(x) => x.cf.needHelp} onConfirm={needHelp}>{t.B_help}</ConfirmBtn>
       </div>
     </Frame>
   );
@@ -137,7 +189,6 @@ function Home() {
 
 function ChooseHelpType() {
   const { t, go, s, set, press } = useP();
-  const [sig, setSig] = useState(0);
   const target: Record<HelpTypeWord, ScreenId> = { quick: "QP", call: "G", later: "Y" };
   const icons: Record<HelpTypeWord, "ey" | "ph" | "cl"> = { quick: "ey", call: "ph", later: "cl" };
   const labels: Record<HelpTypeWord, string> = { quick: t.D_quick, call: t.D_call, later: t.D_later };
@@ -150,11 +201,11 @@ function ChooseHelpType() {
     go(target[m]);
   };
   return (
-    <Frame title={t.D_title} cap={(x) => x.D_cap} onSpoken={() => setSig((n) => n + 1)}>
+    <Frame title={t.D_title} cap={(x) => x.D_cap} hideMic
+      voice={{ q: (x) => x.D_q, parse: (x) => { const m = parseHelpType(x); return m ? () => press(`ht-${m}`, (y) => y.cf[m], () => run(m)) : null; } }}>
       <NotForEmergencies />
       <p>{t.D_p}</p>
-      <ListenRow question={(x) => x.D_q} parse={parseHelpType} startSignal={sig}
-        onValue={(m) => press(`ht-${m}`, (x) => x.cf[m], () => run(m))} />
+      <ListenRow />
       {(["quick", "call", "later"] as const).map((m) => (
         <ConfirmBtn key={m} id={`ht-${m}`} cls={`hz-bt hz-ht${s.lastMode === m ? " hz-pd" : ""}`} msg={(x) => x.cf[m]} onConfirm={() => run(m)}>
           <span className="ic"><Icon n={icons[m]} s={28} /></span>
@@ -170,31 +221,29 @@ function ChooseHelpType() {
 }
 
 function QuickLookPhoto() {
-  const { t, go, set, say, press } = useP();
+  const { t, go, set, press, reask } = useP();
   const [taken, setTaken] = useState(false);
-  const [sig, setSig] = useState(0);
   const choose = (id: SampleItemId) => {
     set((s) => ({ ...s, request: { ...s.request, photo: id } }));
     go(needsHuman(SAMPLE_ITEM_KIND[id]) ? "F" : "Q");
   };
+  const take = () => setTaken(true);
   useEffect(() => {
-    if (!taken) return;
-    let alive = true;
-    void say((x) => `${x.QP_cap2} ${x.QP_q}`).then((ok) => { if (ok && alive) setSig((n) => n + 1); });
-    return () => { alive = false; };
-  }, [taken, say]);
+    if (taken) reask({ mode: "full" });
+  }, [taken, reask]);
   if (!taken) {
     return (
       <Frame title={t.QP_title} cap={(x) => x.QP_cap}
-        actions={<ConfirmBtn id="takePhoto" msg={(x) => x.cf.takePhoto} onConfirm={() => setTaken(true)}>{t.QP_take}</ConfirmBtn>}>
+        voice={{ q: (x) => x.QP_qTake, cmds: { takePhoto: () => press("takePhoto", (x) => x.cf.takePhoto, take) } }}
+        actions={<ConfirmBtn id="takePhoto" msg={(x) => x.cf.takePhoto} onConfirm={take}>{t.QP_take}</ConfirmBtn>}>
         <Camera tall>{t.cameraPlaceholder}</Camera>
       </Frame>
     );
   }
   return (
-    <Frame title={t.QP_title} cap={(x) => x.QP_cap2}>
-      <ListenRow question={(x) => x.QP_q} parse={parsePhoto} startSignal={sig}
-        onValue={(id) => press(`photo-${id}`, (x) => x.cf.photo(x.itemShort[id]), () => choose(id))} />
+    <Frame title={t.QP_title} cap={(x) => x.QP_cap2} hideMic
+      voice={{ q: (x) => x.QP_q, parse: (x) => { const id = parsePhoto(x); return id ? () => press(`photo-${id}`, (y) => y.cf.photo(y.itemShort[id]), () => choose(id)) : null; } }}>
+      <ListenRow />
       <p className="hz-lbl">{t.QP_pick}</p>
       {(["spice", "medicine", "shirt"] as const).map((id) => (
         <ConfirmBtn key={id} id={`photo-${id}`} cls="hz-bt hz-pr hz-pick" msg={(x) => x.cf.photo(x.itemShort[id])} onConfirm={() => choose(id)}>
@@ -207,62 +256,62 @@ function QuickLookPhoto() {
 }
 
 function HumanNeeded() {
-  const { t, go, set } = useP();
+  const { t, go, set, press } = useP();
+  const call = () => go("G");
+  const later = () => { set((s) => ({ ...s, askLater: { photo: s.request.photo, carried: true } })); go("Y"); };
   return (
     <Frame title={t.F_title} cap={(x) => x.F_cap}
-      actions={<ConfirmBtn id="f-call" msg={(x) => x.cf.call} onConfirm={() => go("G")}>{t.D_call}</ConfirmBtn>}>
+      voice={{ q: (x) => x.F_q, cmds: { later: () => press("f-later", (x) => x.cf.later, later), call: () => press("f-call", (x) => x.cf.call, call) } }}
+      actions={<ConfirmBtn id="f-call" msg={(x) => x.cf.call} onConfirm={call}>{t.D_call}</ConfirmBtn>}>
       <p>{t.F_p}</p>
-      <ConfirmBtn id="f-later" cls="hz-bt hz-s" msg={(x) => x.cf.later}
-        onConfirm={() => { set((s) => ({ ...s, askLater: { photo: s.request.photo, carried: true } })); go("Y"); }}>
-        {t.D_later}
-      </ConfirmBtn>
+      <ConfirmBtn id="f-later" cls="hz-bt hz-s" msg={(x) => x.cf.later} onConfirm={later}>{t.D_later}</ConfirmBtn>
     </Frame>
   );
 }
 
 function QuickLookAnswer() {
-  const { t, go } = useP();
+  const { t, go, press } = useP();
+  const notSure = () => go("G");
+  const done = () => go("B", { reset: HOME, anim: "back" });
   return (
     <Frame title={t.Q_title} cap={(x) => `${x.Q_badge}: ${x.Q_answer}`}
-      actions={<ConfirmBtn id="q-notsure" msg={(x) => x.cf.notSure} onConfirm={() => go("G")}>{t.Q_notSure}</ConfirmBtn>}>
+      voice={{ q: (x) => x.Q_q, cmds: { notSure: () => press("q-notsure", (x) => x.cf.notSure, notSure), done: () => press("q-done", (x) => x.cf.doneHome, done) } }}
+      actions={<ConfirmBtn id="q-notsure" msg={(x) => x.cf.notSure} onConfirm={notSure}>{t.Q_notSure}</ConfirmBtn>}>
       <span className="hz-ai"><Icon n="in" s={20} />{t.Q_badge}</span>
       <div className="hz-card">{t.Q_samplePrefix} {t.Q_answer}</div>
-      <ConfirmBtn id="q-done" cls="hz-bt hz-s" msg={(x) => x.cf.doneHome} onConfirm={() => go("B", { reset: ["A", "B"], anim: "back" })}>
-        {t.done}
-      </ConfirmBtn>
+      <ConfirmBtn id="q-done" cls="hz-bt hz-s" msg={(x) => x.cf.doneHome} onConfirm={done}>{t.done}</ConfirmBtn>
     </Frame>
   );
 }
 
 function ChooseHelper() {
-  const { t, go, s, set, say } = useP();
+  const { t, go, s, set, press, reask } = useP();
   const selected = s.helper && !s.unavailable.includes(s.helper) ? s.helper : null;
   const helpers: Helper[] = ["friend", "woman", "man", "anyone"];
   const pickHelper = (h: Helper) => {
-    if (s.unavailable.includes(h)) { void say((x) => x.G_notFree(h)); return; }
+    if (s.unavailable.includes(h)) { reask({ mode: "listen", pre: (x) => `${x.G_notFree(h)} ${x.G_qHelper}` }); return; }
     set((x) => ({ ...x, helper: h }));
-    void say((x) => x.G_echoHelper(x.helper[h]));
+    reask({ mode: "listen", pre: (x) => `${x.G_echoHelper(x.helper[h])} ${x.G_qNext}` });
   };
-  const pickLang = (l: Lang) => {
-    set((x) => ({ ...x, lang: l }));
-    void say((x) => x.G_echoLang(x.langName[l]), l);
-  };
+  const next = () => go("T");
   return (
     <Frame title={t.G_title} cap={(x) => x.G_cap}
-      actions={<ConfirmBtn id="g-continue" msg={(x) => x.cf.continue} onConfirm={() => go("T")} disabled={!selected}>{t.G_continue}</ConfirmBtn>}>
+      voice={{
+        q: (x) => (selected ? `${x.G_echoHelper(x.helper[selected])} ${x.G_qNext}` : x.G_qHelper),
+        parse: (x) => { const h = parseHelper(x); return h ? () => pickHelper(h) : null; },
+        cmds: { continue: () => (selected ? press("g-continue", (x) => x.cf.continue, next) : reask({ mode: "listen", pre: (x) => `${x.G_pickFree} ${x.G_qHelper}` })) },
+      }}
+      actions={<ConfirmBtn id="g-continue" msg={(x) => x.cf.continue} onConfirm={next} disabled={!selected}>{t.G_continue}</ConfirmBtn>}>
       <VoiceRow label={t.G_helper} value={selected ? t.helper[selected] : t.notChosen} question={(x) => x.G_qHelper}
         parse={parseHelper} onValue={pickHelper}
         choices={helpers.map((h) => ({ label: s.unavailable.includes(h) ? `${t.helper[h]} · ${t.G_noneFree}` : t.helper[h], value: h }))} />
-      <VoiceRow label={t.G_language} value={t.langName[s.lang]} question={(x) => x.G_qLang}
-        parse={parseLanguage} onValue={pickLang}
-        choices={(["ur", "en"] as const).map((l) => ({ label: STRINGS[l].langName[l], value: l }))} />
       {!selected && <p className="hz-note">{t.G_pickFree}</p>}
     </Frame>
   );
 }
 
 function BeforeCall() {
-  const { t, go, set } = useP();
+  const { t, go, set, press } = useP();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!busy) return;
@@ -272,9 +321,11 @@ function BeforeCall() {
     }, 1000);
     return () => clearTimeout(id);
   }, [busy, go, set]);
+  const start = () => setBusy(true);
   return (
     <Frame title={t.T_title} cap={(x) => (busy ? x.T_starting : x.T_cap)}
-      actions={<ConfirmBtn id="t-start" busy={busy} msg={(x) => x.cf.startCall} onConfirm={() => setBusy(true)}>
+      voice={{ q: (x) => x.T_q, cmds: { start: () => press("t-start", (x) => x.cf.startCall, start) } }}
+      actions={<ConfirmBtn id="t-start" busy={busy} msg={(x) => x.cf.startCall} onConfirm={start}>
         {busy ? <><span className="hz-sp on-p" aria-hidden="true" />{t.T_starting}</> : t.T_start}
       </ConfirmBtn>}>
       <Tip icon="cm">{t.T_tip1}</Tip>
@@ -347,7 +398,7 @@ function Waiting() {
 }
 
 function LiveCall() {
-  const { t, lang, s, go, say } = useP();
+  const { t, lang, s, go, say, press, reask } = useP();
   const vid = s.request.volunteerId;
   const name = vName(vid, lang);
   const [step, setStep] = useState(0);
@@ -356,17 +407,19 @@ function LiveCall() {
     const b = setTimeout(() => setStep(2), 7500);
     return () => { clearTimeout(a); clearTimeout(b); };
   }, []);
-  // Imran's (or Bilal's) live captions are spoken as they arrive.
+  // Imran's (or Bilal's) live captions are spoken as they arrive; listening resumes after each one.
   useEffect(() => {
     if (step === 0) return;
-    void say((x, l) => (step === 1 ? x.M_c1(vName(vid, l)) : x.M_c2(vName(vid, l))));
-  }, [step, say, vid]);
+    void say((x, l) => (step === 1 ? x.M_c1(vName(vid, l)) : x.M_c2(vName(vid, l)))).then((ok) => { if (ok) reask({ mode: "listen" }); });
+  }, [step, say, vid, reask]);
+  const end = () => go("R", { reset: [...HOME, "R"], anim: "fade" });
   const p = t.M_p(name);
   const cut = p.indexOf(" (");
   return (
     <Frame title={t.M_title} cap={(x, l) => (step === 0 ? x.M_cap(vName(vid, l)) : step === 1 ? x.M_c1(vName(vid, l)) : x.M_c2(vName(vid, l)))}
       spoken={(x, l) => x.M_cap(vName(vid, l))}
-      actions={<ConfirmBtn id="m-end" msg={(x) => x.cf.endCall} onConfirm={() => go("R", { reset: ["A", "B", "R"], anim: "fade" })}>{t.M_end}</ConfirmBtn>}>
+      voice={{ q: (x) => x.M_q, quiet: true, cmds: { end: () => press("m-end", (x) => x.cf.endCall, end) } }}
+      actions={<ConfirmBtn id="m-end" msg={(x) => x.cf.endCall} onConfirm={end}>{t.M_end}</ConfirmBtn>}>
       <Camera tall img={medicineImg} imgAlt={t.item.medicine} tag={t.cameraSample} />
       <p><b>{p.slice(0, cut)}</b>{p.slice(cut)}</p>
     </Frame>
@@ -374,117 +427,166 @@ function LiveCall() {
 }
 
 function CallEnded() {
-  const { t, lang, s, set, go, say } = useP();
+  const { t, lang, s, set, go, press, reask } = useP();
   const vid = s.request.volunteerId;
   const name = vName(vid, lang);
   const isFriend = !!vid && s.friends.includes(vid);
   const [rating, setRating] = useState(0);
   const [reported, setReported] = useState(false);
   const [showNo, setShowNo] = useState(false);
+  const rateAsk = useRef<(() => void) | null>(null);
+  const friendAsk = useRef<(() => void) | null>(null);
+  const numberAsk = useRef<(() => void) | null>(null);
   const yesNo = [{ label: t.yesWord, value: "yes" as const }, { label: t.noWord, value: "no" as const }];
+  const next = (pre: Say) => reask({ mode: "listen", pre: (x, l) => `${pre(x, l)} ${x.R_q}` });
+  const rate = (n: number) => { setRating(n); next((x) => x.R_echoRate(n)); };
   const setFriend = (yes: boolean) => {
     if (!vid) return;
     set((x) => ({ ...x, friends: yes ? (x.friends.includes(vid) ? x.friends : [...x.friends, vid]) : x.friends.filter((f) => f !== vid) }));
-    void say((x, l) => x.R_echoFriend(vName(vid, l), yes));
+    next((x, l) => x.R_echoFriend(vName(vid, l), yes));
   };
+  const setNumber = (yes: boolean) => { setShowNo(yes); next((x) => x.R_echoNumber(yes)); };
+  const report = () => { setReported(true); next((x) => x.R_reported); };
+  const done = () => go("CD", { reset: [...HOME, "CD"], anim: "fade" });
   return (
     <Frame title={t.R_title} cap={(x) => x.R_cap}
-      actions={<ConfirmBtn id="r-done" msg={(x) => x.cf.doneCall} onConfirm={() => go("CD", { reset: ["A", "B", "CD"], anim: "fade" })}>{t.done}</ConfirmBtn>}>
+      voice={{
+        q: (x) => x.R_q,
+        parse: (x) => { const n = parseRating(x); return n ? () => rate(n) : null; },
+        cmds: {
+          rate: () => rateAsk.current?.(),
+          friend: () => friendAsk.current?.(),
+          number: () => numberAsk.current?.(),
+          report: () => (reported ? next((x) => x.R_reported) : press("r-report", (x) => x.cf.report, report)),
+          done: () => press("r-done", (x) => x.cf.doneCall, done),
+        },
+      }}
+      actions={<ConfirmBtn id="r-done" msg={(x) => x.cf.doneCall} onConfirm={done}>{t.done}</ConfirmBtn>}>
       <p>{t.R_p}</p>
       <VoiceRow label={t.R_rate} value={rating ? t.R_rateVal(rating) : t.R_rateNone} question={(x) => x.R_qRate}
-        parse={parseRating} onValue={(n: number) => { setRating(n); void say((x) => x.R_echoRate(n)); }}
+        parse={parseRating} onValue={rate} askRef={rateAsk}
         choices={[1, 2, 3, 4, 5].map((n) => ({ label: t.R_rateVal(n), value: n }))} />
       <VoiceRow label={t.R_friendLabel(name)} value={isFriend ? t.yesWord : t.noWord} question={(x, l) => x.R_qFriend(vName(vid, l))}
-        parse={parseYesNo} onValue={(v) => setFriend(v === "yes")} choices={yesNo} />
+        parse={parseYesNo} onValue={(v) => setFriend(v === "yes")} choices={yesNo} askRef={friendAsk} />
       <VoiceRow label={t.showNumber} value={showNo ? t.numberShownShort : t.numberHiddenShort} question={(x, l) => x.R_qNumber(vName(vid, l))}
-        parse={parseYesNo} onValue={(v) => { setShowNo(v === "yes"); void say((x) => x.R_echoNumber(v === "yes")); }} choices={yesNo} />
+        parse={parseYesNo} onValue={(v) => setNumber(v === "yes")} choices={yesNo} askRef={numberAsk} />
       {reported ? (
         <div className="hz-fade-in"><Notice v="ok" icon="ck" title={t.R_reported} /></div>
       ) : (
-        <ConfirmBtn id="r-report" cls="hz-bt hz-s" msg={(x) => x.cf.report} onConfirm={() => { setReported(true); void say((x) => x.R_reported); }}>
-          {t.R_report}
-        </ConfirmBtn>
+        <ConfirmBtn id="r-report" cls="hz-bt hz-s" msg={(x) => x.cf.report} onConfirm={report}>{t.R_report}</ConfirmBtn>
       )}
     </Frame>
   );
 }
 
 function RequestComplete() {
-  const { t, s, go } = useP();
+  const { t, s, go, press } = useP();
   const no = s.request.number ?? "";
+  const home = () => go("B", { reset: HOME, anim: "back" });
   return (
     <Frame title={t.CD_title} cap={(x) => x.CD_cap(no)} spoken={(x) => x.CD_cap(spellRequestNumber(no))}
-      actions={<ConfirmBtn id="cd-home" msg={(x) => x.cf.backHome} onConfirm={() => go("B", { reset: ["A", "B"], anim: "back" })}>{t.backHome}</ConfirmBtn>}>
+      voice={{ q: (x) => x.CD_q, cmds: { home: () => press("cd-home", (x) => x.cf.backHome, home) } }}
+      actions={<ConfirmBtn id="cd-home" msg={(x) => x.cf.backHome} onConfirm={home}>{t.backHome}</ConfirmBtn>}>
       <StatusCard label={t.status} status={t.stCompleted} numberLabel={t.requestNo} number={no} sample={t.sample} />
     </Frame>
   );
 }
 
 function NoVolunteer() {
-  const { t, s, set, go } = useP();
+  const { t, s, set, go, press } = useP();
   const widen = canWiden(s.helper);
+  const later = () => { set((x) => ({ ...x, askLater: { photo: x.request.photo ?? "bill", carried: true } })); go("Y"); };
+  const wide = () => go("WA");
+  const other = () => go("D", { reset: [...HOME, "D"], anim: "back" });
   return (
     <Frame title={t.W_title} cap={(x) => x.W_cap}
       spoken={(x) => x.W_spoken([...(widen ? [x.W_widen] : []), x.W_other, x.W_later])}
-      actions={<ConfirmBtn id="w-later" msg={(x) => x.cf.sendLater}
-        onConfirm={() => { set((x) => ({ ...x, askLater: { photo: x.request.photo ?? "bill", carried: true } })); go("Y"); }}>
-        {t.W_later}
-      </ConfirmBtn>}>
+      voice={{
+        q: (x) => x.W_q(widen),
+        cmds: {
+          ...(widen ? { widen: () => press("w-widen", (x) => x.cf.widen, wide) } : {}),
+          other: () => press("w-other", (x) => x.cf.other, other),
+          later: () => press("w-later", (x) => x.cf.sendLater, later),
+        },
+      }}
+      actions={<ConfirmBtn id="w-later" msg={(x) => x.cf.sendLater} onConfirm={later}>{t.W_later}</ConfirmBtn>}>
       <Notice v="e" icon="al" title={t.W_cap} />
       <p>{t.W_p1}</p>
       <p className="hz-note">{t.W_p2}</p>
-      {widen && <ConfirmBtn id="w-widen" cls="hz-bt hz-s" msg={(x) => x.cf.widen} onConfirm={() => go("WA")}>{t.W_widen}</ConfirmBtn>}
-      <ConfirmBtn id="w-other" cls="hz-bt hz-s" msg={(x) => x.cf.other} onConfirm={() => go("D", { reset: ["A", "B", "D"], anim: "back" })}>{t.W_other}</ConfirmBtn>
+      {widen && <ConfirmBtn id="w-widen" cls="hz-bt hz-s" msg={(x) => x.cf.widen} onConfirm={wide}>{t.W_widen}</ConfirmBtn>}
+      <ConfirmBtn id="w-other" cls="hz-bt hz-s" msg={(x) => x.cf.other} onConfirm={other}>{t.W_other}</ConfirmBtn>
     </Frame>
   );
 }
 
 function WidenToAnyone() {
   const { t, set, go, back, press } = useP();
-  const [sig, setSig] = useState(0);
   const yes = () => { set((x) => ({ ...x, request: { ...x.request, widened: true, volunteerId: null } })); go("H", { replace: true, anim: "fade" }); };
   return (
-    <Frame title={t.WA_title} cap={(x) => x.WA_cap} spoken={(x) => `${x.WA_p} ${x.WA_q}`} onSpoken={() => setSig((n) => n + 1)}
+    <Frame title={t.WA_title} cap={(x) => x.WA_cap} spoken={(x) => x.WA_p} hideMic
+      voice={{
+        q: (x) => x.WA_q,
+        parse: (x) => {
+          const v = parseYesNo(x);
+          if (v === "yes") return () => press("wa-yes", (y) => y.cf.waYes, yes);
+          if (v === "no") return () => press("wa-no", (y) => y.cf.waNo, back);
+          return null;
+        },
+      }}
       actions={<ConfirmBtn id="wa-yes" msg={(x) => x.cf.waYes} onConfirm={yes}>{t.WA_yes}</ConfirmBtn>}>
       <p>{t.WA_p}</p>
-      <ListenRow question={(x) => x.WA_q} parse={parseYesNo} startSignal={sig}
-        onValue={(v) => (v === "yes" ? press("wa-yes", (x) => x.cf.waYes, yes) : press("wa-no", (x) => x.cf.waNo, back))} />
+      <ListenRow />
       <ConfirmBtn id="wa-no" cls="hz-bt hz-s" msg={(x) => x.cf.waNo} onConfirm={back}>{t.WA_no}</ConfirmBtn>
     </Frame>
   );
 }
 
 function AskLater() {
-  const { t, s, set, go, say } = useP();
+  const { t, s, set, go, press, reask } = useP();
   const [photo, setPhoto] = useState<SampleItemId | null>(s.askLater.photo);
-  const [voice, setVoice] = useState<"idle" | "rec" | "done">("idle");
+  const [rec, setRec] = useState<"idle" | "rec" | "done">("idle");
   const [sec, setSec] = useState(0);
+  const recorded = () => reask({ mode: "listen", pre: (x) => `${x.Y_recordedSay} ${x.Y_q(!!photo, true)}` });
   useEffect(() => {
-    if (voice !== "rec") return;
+    if (rec !== "rec") return;
     const id = setInterval(() => setSec((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [voice]);
+  }, [rec]);
+  const recordedRef = useRef(recorded);
+  recordedRef.current = recorded;
   useEffect(() => {
-    if (voice === "rec" && sec >= 5) { setVoice("done"); void say((x) => x.Y_recordedSay); }
-  }, [sec, voice, say]);
-  const startRec = () => { setSec(0); setVoice("rec"); };
-  const stopRec = () => { setVoice(sec > 0 ? "done" : "idle"); if (sec > 0) void say((x) => x.Y_recordedSay); };
-  const canSend = !!photo || voice === "done";
+    if (rec === "rec" && sec >= 5) { setRec("done"); recordedRef.current(); }
+  }, [sec, rec]);
+  const startRec = () => { setSec(0); setRec("rec"); };
+  const stopRec = () => { setRec(sec > 0 ? "done" : "idle"); if (sec > 0) recorded(); };
+  const addPhoto = () => {
+    setPhoto("bill");
+    reask({ mode: "listen", pre: (x) => `${x.Y_photoAdded(x.itemShort.bill)} ${x.Y_q(true, rec === "done")}` });
+  };
+  const canSend = !!photo || rec === "done";
   const send = () => {
     set((x) => ({ ...x, askLaterNumber: x.askLater.carried && x.request.number ? x.request.number : makeRequestNumber() }));
-    go("YC", { reset: ["A", "B", "YC"], anim: "fade" });
+    go("YC", { reset: [...HOME, "YC"], anim: "fade" });
   };
   const recBody = (
     <>
-      <Icon n={voice === "rec" ? "st" : voice === "done" ? "ck" : "mc"} s={28} />
+      <Icon n={rec === "rec" ? "st" : rec === "done" ? "ck" : "mc"} s={28} />
       <span>
-        {voice === "rec" ? t.Y_recording : voice === "done" ? t.Y_recorded : t.Y_record}
+        {rec === "rec" ? t.Y_recording : rec === "done" ? t.Y_recorded : t.Y_record}
         <br /><span dir="ltr">{formatSeconds(sec)}</span> {t.sample}
       </span>
     </>
   );
   return (
-    <Frame title={t.Y_title} cap={(x) => (voice === "rec" ? x.Y_recording : x.Y_cap)} spoken={(x) => x.Y_cap}
+    <Frame title={t.Y_title} cap={(x) => (rec === "rec" ? x.Y_recording : x.Y_cap)} spoken={(x) => x.Y_cap}
+      voice={{
+        q: (x) => x.Y_q(!!photo, rec === "done"),
+        cmds: {
+          ...(photo ? {} : { addPhoto: () => press("y-photo", (x) => x.cf.addPhoto, addPhoto) }),
+          ...(rec === "rec" ? {} : { record: () => press("y-rec", (x) => x.cf.record, startRec) }),
+          send: () => (canSend ? press("y-send", (x) => x.cf.send, send) : reask({ mode: "listen", pre: (x) => `${x.Y_need} ${x.Y_q(false, false)}` })),
+        },
+      }}
       actions={<>
         {!canSend && <p className="hz-note">{t.Y_need}</p>}
         <ConfirmBtn id="y-send" msg={(x) => x.cf.send} onConfirm={send} disabled={!canSend}>{t.Y_send}</ConfirmBtn>
@@ -494,13 +596,10 @@ function AskLater() {
       ) : (
         <>
           <Camera>{t.Y_photoPh}</Camera>
-          <ConfirmBtn id="y-photo" cls="hz-bt hz-s" msg={(x) => x.cf.addPhoto}
-            onConfirm={() => { setPhoto("bill"); void say((x) => x.Y_photoAdded(x.itemShort.bill)); }}>
-            {t.Y_addPhoto}
-          </ConfirmBtn>
+          <ConfirmBtn id="y-photo" cls="hz-bt hz-s" msg={(x) => x.cf.addPhoto} onConfirm={addPhoto}>{t.Y_addPhoto}</ConfirmBtn>
         </>
       )}
-      {voice === "rec" ? (
+      {rec === "rec" ? (
         <button type="button" className="hz-bt hz-p" onClick={stopRec} aria-pressed="true">{recBody}</button>
       ) : (
         <ConfirmBtn id="y-rec" cls="hz-bt hz-s" msg={(x) => x.cf.record} onConfirm={startRec}>{recBody}</ConfirmBtn>
@@ -511,30 +610,33 @@ function AskLater() {
 }
 
 function AskLaterSent() {
-  const { t, lang, s, go, say, press, armed, armListening } = useP();
+  const { t, lang, s, go, press, armed, armListening, reask } = useP();
   const [ntf, setNtf] = useState(false);
   useEffect(() => {
-    const id = setTimeout(() => {
-      setNtf(true);
-      void say((x, l) => x.YC_ntf(vName(ASK_LATER_REPLIER, l)));
-    }, 5000);
+    const id = setTimeout(() => setNtf(true), 5000);
     return () => clearTimeout(id);
-  }, [say]);
+  }, []);
+  // The reply notification is spoken, then the app listens for "open".
+  useEffect(() => {
+    if (ntf) reask({ mode: "question" });
+  }, [ntf, reask]);
   const no = s.askLaterNumber ?? "";
   const name = vName(ASK_LATER_REPLIER, lang);
   const on = armed === "yc-ntf";
+  const openMsg: Say = (x, l) => x.cf.openReply(vName(ASK_LATER_REPLIER, l));
+  const open = () => go("YR");
   return (
     <>
-      <Frame title={t.YC_title} cap={(x, l) => (ntf ? x.YC_ntf(vName(ASK_LATER_REPLIER, l)) : x.YC_cap(no))} spoken={(x) => x.YC_cap(spellRequestNumber(no))}>
+      <Frame title={t.YC_title} cap={(x, l) => (ntf ? x.YC_ntf(vName(ASK_LATER_REPLIER, l)) : x.YC_cap(no))} spoken={(x) => x.YC_cap(spellRequestNumber(no))}
+        {...(ntf ? { voice: { q: (x, l) => x.YC_ntfSay(vName(ASK_LATER_REPLIER, l)), cmds: { open: () => press("yc-ntf", openMsg, open) } } } : {})}>
         <StatusCard label={t.status} status={t.stSent} numberLabel={t.requestNo} number={no} sample={t.sample} />
       </Frame>
       {ntf && (
-        <button type="button" className={`hz-ntf${on ? " is-armed" : ""}`}
-          onClick={() => press("yc-ntf", (x, l) => x.cf.openReply(vName(ASK_LATER_REPLIER, l)), () => go("YR"))}>
+        <button type="button" className="hz-ntf" aria-describedby={on ? "hz-hint-yc-ntf" : undefined} onClick={() => press("yc-ntf", openMsg, open)}>
           <Icon n="bl" />
           <span>
             <small>{t.YC_ntfFrom}</small>{t.YC_ntf(name)}
-            {on && <ArmHint id="yc-ntf" listening={armListening} text={t.pressAgain} listeningText={t.listening} />}
+            {on && <ArmHint id="yc-ntf" listening={armListening} />}
           </span>
         </button>
       )}
@@ -544,7 +646,7 @@ function AskLaterSent() {
 
 const REPLY_SECONDS = 8;
 function VoiceReply() {
-  const { t, lang, go, say } = useP();
+  const { t, lang, go, say, press, reask } = useP();
   const name = vName(ASK_LATER_REPLIER, lang);
   const [playing, setPlaying] = useState(false);
   const [pos, setPos] = useState(0);
@@ -561,10 +663,11 @@ function VoiceReply() {
     setPlaying(true);
     void say((x, l) => x.YR_reply(vName(ASK_LATER_REPLIER, l))).then((ok) => {
       setPlaying(false);
-      if (ok) setPos(REPLY_SECONDS);
+      if (ok) { setPos(REPLY_SECONDS); reask({ mode: "question" }); }
     });
   };
   const stop = () => { cancelSpeech(); setPlaying(false); };
+  const home = () => go("B", { reset: HOME, anim: "back" });
   const body = (
     <>
       <Icon n={playing ? "pa" : "pl"} s={28} />
@@ -573,7 +676,11 @@ function VoiceReply() {
   );
   return (
     <Frame title={t.YR_title} cap={(x, l) => (heard ? x.YR_reply(vName(ASK_LATER_REPLIER, l)) : x.YR_cap)} spoken={(x) => x.YR_cap}
-      actions={<ConfirmBtn id="yr-home" msg={(x) => x.cf.backHome} onConfirm={() => go("B", { reset: ["A", "B"], anim: "back" })}>{t.backHome}</ConfirmBtn>}>
+      voice={{
+        q: (x) => x.YR_q,
+        cmds: { ...(playing ? {} : { play: () => press("yr-play", (x) => x.cf.play, play) }), home: () => press("yr-home", (x) => x.cf.backHome, home) },
+      }}
+      actions={<ConfirmBtn id="yr-home" msg={(x) => x.cf.backHome} onConfirm={home}>{t.backHome}</ConfirmBtn>}>
       <p>{t.YR_from(name)}</p>
       {playing ? (
         <button type="button" className="hz-bt hz-p" onClick={stop}>{body}</button>
@@ -671,13 +778,15 @@ function ThankYou() {
 }
 
 const SCREENS: Record<ScreenId, () => ReactNode> = {
-  A: StartScreen, B: Home, D: ChooseHelpType, QP: QuickLookPhoto, F: HumanNeeded, Q: QuickLookAnswer,
+  A: StartScreen, L: ChooseLanguage, B: Home, D: ChooseHelpType, QP: QuickLookPhoto, F: HumanNeeded, Q: QuickLookAnswer,
   G: ChooseHelper, T: BeforeCall, H: Waiting, M: LiveCall, R: CallEnded, CD: RequestComplete,
   W: NoVolunteer, WA: WidenToAnyone, Y: AskLater, YC: AskLaterSent, YR: VoiceReply,
   V1: WhatsApp, V2x: LinkExpired, V3: VolunteerRule, V5: DeclineReasons, VM: VolunteerCall, VT: ThankYou,
 };
 
 /* ---------- Shell ---------- */
+
+type Arm = { id: string; msg: Say; action: () => void; lang?: Lang | undefined };
 
 export function Prototype() {
   const [s, setS] = useState<Session>(initialSession);
@@ -688,6 +797,7 @@ export function Prototype() {
   const [armed, setArmed] = useState<string | null>(null);
   const [armListening, setArmListening] = useState(false);
   const [voice, setVoice] = useState<VoiceState>("unknown");
+  const [mic, setMicState] = useState<Mic>({ s: "idle" });
   const phoneRef = useRef<HTMLDivElement>(null);
   const screen: ScreenId = stack[stack.length - 1] ?? "A";
   const blind = !VOLUNTEER_SCREENS.includes(screen);
@@ -697,14 +807,25 @@ export function Prototype() {
   langRef.current = s.lang;
   const voiceRef = useRef<VoiceState>("unknown");
   const voiceAnnounced = useRef(false);
-  const armRef = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const armRef = useRef<Arm | null>(null);
+  const flowRef = useRef(0);
+  const screenAskRef = useRef<((o?: AskOpts) => Promise<void>) | null>(null);
+  const backRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!recognitionSupported()) { voiceRef.current = "off"; setVoice("off"); }
   }, []);
 
-  /** Speaks in the app language; Urdu falls back to the English text when no Urdu voice is installed. */
+  const begin = useCallback(() => ++flowRef.current, []);
+  const isCurrent = useCallback((n: number) => flowRef.current === n, []);
+  const setMic = useCallback((m: Mic) => setMicState(m), []);
+  const registerScreen = useCallback<Ctx["registerScreen"]>((fn) => { screenAskRef.current = fn; }, []);
+  const reask = useCallback<Ctx["reask"]>((o) => { void screenAskRef.current?.(o); }, []);
+  const setLang = useCallback((l: Lang) => { langRef.current = l; setS((x) => ({ ...x, lang: l })); }, []);
+
+  /** Speaks in the app language; Urdu falls back to the English text when no Urdu voice is installed. Never listens while speaking. */
   const say = useCallback((build: Say, langOverride?: Lang) => {
+    stopListening();
     const want = langOverride ?? langRef.current;
     const l: Lang = want === "ur" && !hasUrduVoice() ? "en" : want;
     return speak(build(STRINGS[l], l), l);
@@ -722,45 +843,69 @@ export function Prototype() {
   }, []);
 
   const clearArm = useCallback(() => {
-    if (armRef.current) clearTimeout(armRef.current.timer);
     armRef.current = null;
     setArmed(null);
     setArmListening(false);
   }, []);
 
-  const press = useCallback<Ctx["press"]>((id, msg, action) => {
+  /** Speaks what the choice does, then listens up to 8 s for confirm, cancel, repeat or back; one "I did not hear you" retry. */
+  const runConfirm = useCallback(async (a: Arm): Promise<void> => {
+    const token = begin();
+    stopListening();
+    setMic({ s: "idle" });
+    armRef.current = a;
+    setArmed(a.id);
+    setArmListening(false);
+    let ok = await say(a.msg, a.lang);
+    if (!ok || !isCurrent(token) || voiceRef.current === "off") return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      setArmListening(true);
+      const r = await listen(a.lang ?? langRef.current, LISTEN_MS);
+      if (!isCurrent(token)) return;
+      setArmListening(false);
+      if (r.status === "aborted") return;
+      if (r.status === "unavailable") { await markVoiceOff(); return; }
+      if (r.status === "ok") {
+        markVoiceOk();
+        const w = r.alternatives.map(parseConfirm).find((x) => x !== null) ?? null;
+        if (w === "confirm") { clearArm(); a.action(); return; }
+        if (w === "cancel") { clearArm(); reask({ mode: "question" }); return; }
+        if (w === "repeat") { void runConfirm(a); return; }
+        if (w === "back") { clearArm(); backRef.current(); return; }
+      }
+      if (attempt === 0) {
+        ok = await say((x) => x.notHeard, a.lang);
+        if (!ok || !isCurrent(token)) return;
+      }
+    }
+  }, [begin, isCurrent, setMic, say, markVoiceOff, markVoiceOk, clearArm, reask]);
+
+  const press = useCallback<Ctx["press"]>((id, msg, action, lang) => {
+    // Silent fallback for evaluators: a second tap on the same choice runs it.
     if (armRef.current?.id === id) {
+      begin();
       clearArm();
       stopListening();
       cancelSpeech();
       action();
       return;
     }
-    clearArm();
-    stopListening();
-    armRef.current = { id, timer: setTimeout(clearArm, 10000) };
-    setArmed(id);
-    void say(msg).then(async (ok) => {
-      if (!ok || armRef.current?.id !== id || voiceRef.current === "off") return;
-      setArmListening(true);
-      const r = await listen(langRef.current, 6000);
-      if (armRef.current?.id !== id) return;
-      setArmListening(false);
-      if (r.status === "unavailable") { await markVoiceOff(); return; }
-      if (r.status === "ok") {
-        markVoiceOk();
-        const answer = r.alternatives.map(parseYesNo).find((v) => v !== null);
-        if (answer === "yes") { clearArm(); action(); }
-        else if (answer === "no") clearArm();
-      }
-    });
-  }, [clearArm, say, markVoiceOff, markVoiceOk]);
+    void runConfirm({ id, msg, action, lang });
+  }, [begin, clearArm, runConfirm]);
+
+  const tapRepeat = useCallback(() => {
+    const a = armRef.current;
+    if (a) void runConfirm(a);
+    else reask({ mode: "full" });
+  }, [runConfirm, reask]);
 
   const leave = useCallback(() => {
+    begin();
     clearArm();
     stopListening();
     cancelSpeech();
-  }, [clearArm]);
+    setMic({ s: "idle" });
+  }, [begin, clearArm, setMic]);
 
   const go = useCallback<Ctx["go"]>((to, opts = {}) => {
     leave();
@@ -770,21 +915,26 @@ export function Prototype() {
   }, [leave]);
   const endCall = useCallback(() => {
     setConfirm(false);
-    if (screen === "M") go("R", { reset: ["A", "B", "R"], anim: "fade" });
+    if (screen === "M") go("R", { reset: [...HOME, "R"], anim: "fade" });
     else go("VT", { reset: ["A", "VT"], anim: "fade" });
   }, [screen, go]);
   const back = useCallback(() => {
     if (screen === "M" || screen === "VM") {
-      clearArm();
+      leave();
       setConfirm(true);
-      if (screen === "M") void say((x) => `${x.M_confirm} ${x.M_confirmBody}`);
       return;
     }
     leave();
     setStack((st) => (st.length > 1 ? st.slice(0, -1) : st));
     setAnim("back");
     setNavKey((k) => k + 1);
-  }, [screen, leave, clearArm, say]);
+  }, [screen, leave]);
+  backRef.current = back;
+  const closeDialog = useCallback(() => {
+    leave();
+    setConfirm(false);
+    if (screen === "M") reask({ mode: "question" });
+  }, [leave, screen, reask]);
 
   useEffect(() => () => { stopListening(); cancelSpeech(); }, []);
 
@@ -797,8 +947,16 @@ export function Prototype() {
   const Screen = SCREENS[screen];
   const set = useCallback((fn: (s: Session) => Session) => setS(fn), []);
   const ctx: Ctx = {
-    t, lang: s.lang, langRef, s, blind, set, go, back, confirmEnd: () => setConfirm(true),
-    say, press, armed, armListening, voiceRef, voice, markVoiceOff, markVoiceOk,
+    t, lang: s.lang, langRef, setLang, s, blind, set, go, back, confirmEnd: () => setConfirm(true),
+    say, press, armed, armListening, tapRepeat, reask, registerScreen, begin, isCurrent, clearArm,
+    mic, setMic, voiceRef, voice, markVoiceOff, markVoiceOk,
+  };
+
+  // Tapping empty space on a blind-user screen repeats the prompt and listens again.
+  const onEmptyTap = (e: MouseEvent) => {
+    if (!blind) return;
+    if ((e.target as HTMLElement).closest("button, a, input, label, [role=radio], [role=switch]")) return;
+    tapRepeat();
   };
 
   return (
@@ -806,25 +964,56 @@ export function Prototype() {
       <main className="hz-stage">
         <div ref={phoneRef} className="hz-ph" dir={s.lang === "ur" ? "rtl" : "ltr"} lang={s.lang} aria-label="Humnazar prototype">
           <div className="hz-sb" dir="ltr" aria-hidden="true"><span>9:41</span><span>4G</span></div>
-          <div key={navKey} className={`hz-screen hz-anim-${anim}${blind ? " hz-blind" : ""}`}>
+          <div key={navKey} className={`hz-screen hz-anim-${anim}${blind ? " hz-blind" : ""}`} onClick={onEmptyTap}>
             <Screen />
           </div>
           <div className="hz-hi" aria-hidden="true"><i /></div>
-          {confirm && <EndCallDialog t={t} blind={blind} onYes={endCall} onNo={() => { cancelSpeech(); setConfirm(false); }} />}
+          {confirm && <EndCallDialog onYes={endCall} onNo={closeDialog} />}
         </div>
       </main>
     </PrototypeContext.Provider>
   );
 }
 
-function EndCallDialog({ t, blind, onYes, onNo }: { t: Strings; blind: boolean; onYes: () => void; onNo: () => void }) {
+function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
+  const { t, blind, say, begin, isCurrent, langRef, voiceRef } = useP();
   const noRef = useRef<HTMLButtonElement>(null);
+  const yesRef = useRef(onYes);
+  yesRef.current = onYes;
+  const noFn = useRef(onNo);
+  noFn.current = onNo;
   useEffect(() => {
     noRef.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onNo(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onNo]);
+  // Blind users answer the dialog by voice: yes ends the call, no stays on it.
+  useEffect(() => {
+    if (!blind) return;
+    const token = begin();
+    void (async () => {
+      let ok = await say((x) => `${x.M_confirm} ${x.M_confirmBody} ${x.M_confirmQ}`);
+      if (!ok || !isCurrent(token) || voiceRef.current === "off") return;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const r = await listen(langRef.current, LISTEN_MS);
+        if (!isCurrent(token)) return;
+        if (r.status === "aborted" || r.status === "unavailable") return;
+        if (r.status === "ok") {
+          for (const alt of r.alternatives) {
+            const c = parseConfirm(alt);
+            const v = parseYesNo(alt) ?? (c === "confirm" ? "yes" : c === "cancel" ? "no" : null);
+            if (v === "yes") { yesRef.current(); return; }
+            if (v === "no") { noFn.current(); return; }
+          }
+        }
+        if (attempt === 0) {
+          ok = await say((x) => `${x.notHeardQ} ${x.M_confirmQ}`);
+          if (!ok || !isCurrent(token)) return;
+        }
+      }
+    })();
+  }, [blind, begin, isCurrent, say, langRef, voiceRef]);
   return (
     <div className={`hz-scrim${blind ? " hz-blind" : ""}`} onClick={onNo}>
       <div className="hz-dlg" role="alertdialog" aria-modal="true" aria-labelledby="hz-dlg-t" aria-describedby="hz-dlg-d" onClick={(e) => e.stopPropagation()}>

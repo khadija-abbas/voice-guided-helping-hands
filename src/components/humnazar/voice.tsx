@@ -1,21 +1,24 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
+import { LISTEN_MS } from "@/lib/humnazar/logic";
 import { listen, stopListening } from "@/lib/humnazar/speech";
-import { useP, type Say } from "./context";
+import { parseCmd, parseConfirm, type CmdWord } from "@/lib/humnazar/voice-words";
+import { useP, type AskOpts, type Say, type ScreenVoice } from "./context";
 import { Icon } from "./ui";
 
-/* ---------- Two-press confirm button ---------- */
+/* ---------- Voice-confirm button ---------- */
 
+/** First choice (tap or voice) speaks what it does and listens for "confirm"; a second tap is a silent fallback. */
 export function ConfirmBtn({ id, msg, onConfirm, cls = "hz-bt hz-p", disabled, busy, children, label }: {
   id: string; msg: Say; onConfirm: () => void; cls?: string; disabled?: boolean | undefined; busy?: boolean | undefined; children: ReactNode; label?: string | undefined;
 }) {
-  const { press, armed, armListening, t } = useP();
+  const { press, armed, armListening } = useP();
   const on = armed === id;
   return (
     <div className="hz-cf">
       <button
         type="button"
-        className={`${cls}${on ? " is-armed" : ""}${busy ? " is-busy" : ""}`}
+        className={`${cls}${busy ? " is-busy" : ""}`}
         disabled={disabled || busy}
         aria-busy={busy || undefined}
         aria-label={label}
@@ -24,18 +27,90 @@ export function ConfirmBtn({ id, msg, onConfirm, cls = "hz-bt hz-p", disabled, b
       >
         {children}
       </button>
-      {on && <ArmHint id={id} listening={armListening} text={t.pressAgain} listeningText={t.listening} />}
+      {on && <ArmHint id={id} listening={armListening} />}
     </div>
   );
 }
 
-export function ArmHint({ id, listening, text, listeningText }: { id: string; listening: boolean; text: string; listeningText: string }) {
+/** Status line for sighted evaluators while a choice waits for "confirm" or "cancel". */
+export function ArmHint({ id, listening }: { id: string; listening: boolean }) {
+  const { t } = useP();
   return (
     <div id={`hz-hint-${id}`} className="hz-armhint hz-fade-in" role="status">
-      <Icon n={listening ? "mc" : "in"} />
-      <span>{text}{listening ? ` · ${listeningText}` : ""}</span>
+      <Icon n="mc" />
+      <span>{listening ? `${t.listening} ${t.sayConfirm}` : t.sayConfirm}</span>
     </div>
   );
+}
+
+/* ---------- Screen question: speak caption + question, then listen ---------- */
+
+/** Returns the screen's ask(); Frame runs it when the screen opens and registers it for repeat and cancel. */
+export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
+  const { say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, isCurrent, clearArm, setMic, back } = useP();
+  const vRef = useRef(voice);
+  vRef.current = voice;
+  const spokenRef = useRef(spoken);
+  spokenRef.current = spoken;
+  const backRef = useRef(back);
+  backRef.current = back;
+
+  const ask = useCallback(async (o: AskOpts = {}): Promise<void> => {
+    const token = begin();
+    clearArm();
+    stopListening();
+    setMic({ s: "idle" });
+    const mode = o.mode ?? "full";
+    let ok = true;
+    if (o.pre) ok = await say(o.pre);
+    if (!ok || !isCurrent(token)) return;
+    if (mode !== "listen") {
+      const v = vRef.current;
+      if (v?.prompt) ok = await v.prompt();
+      else ok = await say((x, l) => [mode === "full" ? spokenRef.current(x, l) : "", v?.q ? v.q(x, l) : ""].filter(Boolean).join(" "));
+      if (!ok || !isCurrent(token)) return;
+    }
+    if (!vRef.current || (!vRef.current.parse && !vRef.current.cmds)) return;
+    if (voiceRef.current === "off") { await markVoiceOff(); return; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      setMic({ s: "listening" });
+      const r = await listen(vRef.current?.listenLang?.(attempt) ?? langRef.current, LISTEN_MS);
+      if (!isCurrent(token)) return;
+      if (r.status === "aborted") { setMic({ s: "idle" }); return; }
+      if (r.status === "unavailable") { setMic({ s: "idle" }); await markVoiceOff(); return; }
+      const v = vRef.current;
+      if (r.status === "ok" && v) {
+        markVoiceOk();
+        for (const alt of r.alternatives) {
+          const hit = v.parse?.(alt) ?? null;
+          const key = hit ? null : parseCmd(alt, Object.keys(v.cmds ?? {}) as CmdWord[]);
+          const run = hit ?? (key ? v.cmds?.[key] : undefined);
+          if (run) { setMic({ s: "heard", heard: r.text }); run(); return; }
+          const nav = parseConfirm(alt);
+          if (nav === "repeat") { void ask({ mode: "full" }); return; }
+          if (nav === "back") { backRef.current(); return; }
+        }
+      }
+      if (v?.quiet) { setMic({ s: "idle" }); return; }
+      if (attempt === 0) {
+        setMic({ s: r.status === "ok" ? "heard" : "idle", heard: r.status === "ok" ? r.text : "" });
+        const q = v?.q;
+        ok = v?.retry ? await v.retry() : await say((x, l) => `${x.notHeardQ} ${q ? q(x, l) : ""}`.trim());
+        if (!ok || !isCurrent(token)) return;
+      }
+    }
+    setMic({ s: "failed" });
+  }, [say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, isCurrent, clearArm, setMic]);
+  return ask;
+}
+
+/** Status line under the caption strip: Listening… / Heard … / Tap the screen to try again. */
+export function MicLine() {
+  const { t, mic, armed } = useP();
+  if (armed || mic.s === "idle") return null;
+  if (mic.s === "listening") return <div className="hz-vs hz-mic" role="status"><Icon n="mc" />{t.listening}</div>;
+  if (mic.s === "heard") return <div className="hz-vs hz-mic" role="status"><Icon n="ck" />{t.heard(mic.heard ?? "")}</div>;
+  return <div className="hz-vs hz-mic fail" role="status"><Icon n="al" />{t.tapScreen}</div>;
 }
 
 /* ---------- Ask by voice ---------- */
@@ -45,7 +120,7 @@ type AskOutcome = "ok" | "fail" | "off" | "cancel";
 
 /** Speaks a question (optional), listens up to 6 s, retries once with "Sorry…", then asks to tap again. */
 export function useVoiceAsk<T>(parse: (text: string) => T | null, onValue: (v: T) => void) {
-  const { say, langRef, voiceRef, markVoiceOff, markVoiceOk } = useP();
+  const { say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, clearArm, setMic } = useP();
   const [status, setStatus] = useState<Status>("idle");
   const [heard, setHeard] = useState("");
   const alive = useRef(true);
@@ -57,6 +132,9 @@ export function useVoiceAsk<T>(parse: (text: string) => T | null, onValue: (v: T
   }, []);
 
   const ask = async (question?: Say): Promise<AskOutcome> => {
+    begin();
+    clearArm();
+    setMic({ s: "idle" });
     stopListening();
     if (question) {
       const ok = await say(question);
@@ -101,9 +179,9 @@ function VoiceStatus({ status, heard }: { status: Status; heard: string }) {
 }
 
 /** Full-width 88px row: label on line 1, current value on line 2. Tapping asks the question aloud and listens. */
-export function VoiceRow<T>({ label, value, question, parse, onValue, choices }: {
+export function VoiceRow<T>({ label, value, question, parse, onValue, choices, askRef }: {
   label: string; value: string; question: Say; parse: (text: string) => T | null; onValue: (v: T) => void;
-  choices: { label: string; value: T }[];
+  choices: { label: string; value: T }[]; askRef?: MutableRefObject<(() => void) | null>;
 }) {
   const { t, voice } = useP();
   const [fallback, setFallback] = useState(false);
@@ -113,6 +191,7 @@ export function VoiceRow<T>({ label, value, question, parse, onValue, choices }:
     const r = await ask(question);
     if (r === "off") setFallback(true);
   };
+  if (askRef) askRef.current = () => void tap();
   return (
     <>
       <button type="button" className={`hz-row${status === "listening" ? " is-listening" : ""}`} onClick={tap} aria-label={`${label}: ${value}. ${t.tapToSpeak}`}>
@@ -138,26 +217,20 @@ export function VoiceRow<T>({ label, value, question, parse, onValue, choices }:
   );
 }
 
-/** "Say your choice" row for screens whose choices are already big buttons; a spoken choice arms that button. */
-export function ListenRow<T>({ question, parse, onValue, startSignal }: {
-  question: Say; parse: (text: string) => T | null; onValue: (v: T) => void; startSignal: number;
-}) {
-  const { t, voice, voiceRef, markVoiceOff } = useP();
-  const { status, heard, ask } = useVoiceAsk(parse, onValue);
-  const askRef = useRef(ask);
-  askRef.current = ask;
-  useEffect(() => {
-    if (startSignal === 0) return;
-    if (voiceRef.current === "off") { void markVoiceOff(); return; }
-    void askRef.current();
-  }, [startSignal, voiceRef, markVoiceOff]);
+/** "Say your choice" row on screens whose choices are big buttons; shows the screen's listening status, tap to ask again. */
+export function ListenRow() {
+  const { t, voice, mic, armed, reask } = useP();
   // Choices are already big buttons; the one-time "voice is off" message is spoken by markVoiceOff.
   if (voice === "off") return null;
+  const listening = mic.s === "listening" && !armed;
   return (
-    <button type="button" className={`hz-row${status === "listening" ? " is-listening" : ""}`} onClick={() => void ask(question)} aria-label={`${t.sayChoice}. ${t.tapToSpeak}`}>
+    <button type="button" className={`hz-row${listening ? " is-listening" : ""}`} onClick={() => reask({ mode: "question" })} aria-label={`${t.sayChoice}. ${t.tapToSpeak}`}>
       <span className="tx">
         <span className="l">{t.sayChoice}</span>
-        {status === "idle" ? <span className="hz-vs"><Icon n="mc" />{t.tapToSpeak}</span> : <VoiceStatus status={status} heard={heard} />}
+        {listening ? <span className="hz-vs" role="status"><Icon n="mc" />{t.listening}</span>
+          : mic.s === "heard" && !armed ? <span className="hz-vs" role="status"><Icon n="ck" />{t.heard(mic.heard ?? "")}</span>
+          : mic.s === "failed" && !armed ? <span className="hz-vs fail" role="status"><Icon n="al" />{t.tapScreen}</span>
+          : <span className="hz-vs"><Icon n="mc" />{t.tapToSpeak}</span>}
       </span>
       <span className="ic" aria-hidden="true"><Icon n="mc" s={28} /></span>
     </button>

@@ -275,7 +275,6 @@
 
   /* Two-press confirm */
   .hz-cf { display: flex; flex-direction: column; gap: 8px; }
-  .hz-blind .is-armed { outline: 4px solid var(--hz-n900); outline-offset: 3px; }
   .hz-armhint { display: flex; align-items: center; gap: 8px; font: 700 20px/28px var(--font-sans); color: var(--hz-n900); }
   .hz-armhint svg { color: var(--hz-a); flex: none; }
 
@@ -299,8 +298,11 @@
 @layer components {
   .hz-gr .hz-cf { flex: 1; display: flex; }
   .hz-gr .hz-cf > .hz-bt { flex: 1; }
-  .hz-ntf.is-armed { outline: 4px solid var(--hz-n900); outline-offset: 3px; }
   .hz-ntf .hz-armhint { margin-top: 4px; }
+  .hz-mic { margin: 8px 24px 0; flex: none; }
+  .hz-bi { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .hz-bi [dir="rtl"] { text-align: right; }
+  .hz-blind .hz-lang { min-height: 88px; font-size: 24px; line-height: 32px; }
   .hz-blind .hz-bt > svg { flex: none; }
   .hz-scrim.hz-blind .hz-bt { min-height: 72px; font-size: 20px; }
 }

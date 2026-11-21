@@ -44,3 +44,17 @@ describe("Humnazar sample rules", () => {
     expect(makeRequestNumber(new Date(2026, 0, 3), () => 0.0005)).toBe("HNZ-0103-0005");
   });
 });
+
+import { afterLanguage, LISTEN_MS } from "./logic";
+
+describe("language is asked first", () => {
+  it("a blind or low-vision user goes Home after choosing a language", () => {
+    expect(afterLanguage("user")).toBe("B");
+  });
+  it("a volunteer goes to the WhatsApp message after choosing a language", () => {
+    expect(afterLanguage("volunteer")).toBe("V1");
+  });
+  it("listens up to 8 seconds for a spoken answer", () => {
+    expect(LISTEN_MS).toBe(8000);
+  });
+});

@@ -100,3 +100,11 @@ export function formatSeconds(s: number): string {
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
+
+export type Role = "user" | "volunteer";
+/** Both roles choose a language straight after Start; then users go Home and volunteers to the WhatsApp message. */
+export function afterLanguage(role: Role): "B" | "V1" {
+  return role === "user" ? "B" : "V1";
+}
+/** How long the app listens for each spoken answer. */
+export const LISTEN_MS = 8000;

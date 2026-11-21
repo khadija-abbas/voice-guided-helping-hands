@@ -62,3 +62,33 @@ describe("spoken answers", () => {
     expect(spellRequestNumber("HNZ-1115-4827")).toBe("H N Z, 1 1 1 5, 4 8 2 7");
   });
 });
+
+import { parseCmd, parseConfirm } from "./voice-words";
+
+describe("spoken confirmation", () => {
+  it("confirm words in English and Urdu navigate", () => {
+    for (const w of ["confirm", "yes", "ok", "continue", "تصدیق", "ہاں", "جی", "ٹھیک ہے", "آگے"]) expect(parseConfirm(w)).toBe("confirm");
+  });
+  it("cancel words stay on the screen", () => {
+    for (const w of ["cancel", "no", "منسوخ", "نہیں"]) expect(parseConfirm(w)).toBe("cancel");
+    expect(parseConfirm("جی نہیں")).toBe("cancel");
+  });
+  it("repeat and back words", () => {
+    expect(parseConfirm("repeat")).toBe("repeat");
+    expect(parseConfirm("دوبارہ")).toBe("repeat");
+    expect(parseConfirm("back")).toBe("back");
+    expect(parseConfirm("واپس")).toBe("back");
+  });
+  it("unrelated speech is not an answer", () => {
+    expect(parseConfirm("banana")).toBeNull();
+  });
+});
+
+describe("screen commands", () => {
+  it("checks commands in the order given", () => {
+    expect(parseCmd("back to home", ["home"])).toBe("home");
+    expect(parseCmd("مجھے مدد چاہیے", ["help"])).toBe("help");
+    expect(parseCmd("ask later", ["call", "later"])).toBe("later");
+    expect(parseCmd("banana", ["help"])).toBeNull();
+  });
+});

@@ -1,10 +1,11 @@
 import { createContext, useContext, type MutableRefObject } from "react";
 
 import type { Strings } from "@/lib/humnazar/i18n";
-import type { Helper, Lang, SampleItemId } from "@/lib/humnazar/logic";
+import type { Helper, Lang, Role, SampleItemId } from "@/lib/humnazar/logic";
+import type { CmdWord } from "@/lib/humnazar/voice-words";
 
 export type ScreenId =
-  | "A" | "B" | "D" | "QP" | "F" | "Q" | "G" | "T" | "H" | "M" | "R" | "CD" | "W" | "WA"
+  | "A" | "L" | "B" | "D" | "QP" | "F" | "Q" | "G" | "T" | "H" | "M" | "R" | "CD" | "W" | "WA"
   | "Y" | "YC" | "YR" | "V1" | "V2x" | "V3" | "V5" | "VM" | "VT";
 export type Anim = "fwd" | "back" | "fade";
 export type Mode = "quick" | "call" | "later";
@@ -19,6 +20,7 @@ export interface Request {
   volunteerId: string | null;
 }
 export interface Session {
+  role: Role;
   lang: Lang;
   helper: Helper | null;
   lastMode: Mode | null;
@@ -30,10 +32,29 @@ export interface Session {
   askLaterNumber: string | null;
 }
 
+/** What a blind-user screen says after its caption and which spoken answers it accepts. */
+export interface ScreenVoice {
+  q?: Say;
+  /** Checked first: a screen-specific parser (helper, photo, yes or no, rating). */
+  parse?: (text: string) => (() => void) | null;
+  /** Then these command words, in this order. */
+  cmds?: Partial<Record<CmdWord, () => void>>;
+  /** No "I did not hear you" retry (live call). */
+  quiet?: boolean;
+  /** Replaces caption + question speech (Choose language speaks both languages). */
+  prompt?: () => Promise<boolean>;
+  retry?: () => Promise<boolean>;
+  listenLang?: (attempt: number) => Lang;
+}
+/** full = caption + question, question = question only, listen = no speech. pre is spoken first. */
+export interface AskOpts { mode?: "full" | "question" | "listen"; pre?: Say }
+export type Mic = { s: "idle" | "listening" | "heard" | "failed"; heard?: string };
+
 export interface Ctx {
   t: Strings;
   lang: Lang;
   langRef: MutableRefObject<Lang>;
+  setLang: (l: Lang) => void;
   s: Session;
   blind: boolean;
   set: (fn: (s: Session) => Session) => void;
@@ -41,10 +62,21 @@ export interface Ctx {
   back: () => void;
   confirmEnd: () => void;
   say: (build: Say, langOverride?: Lang) => Promise<boolean>;
-  /** Two-press confirm: first press arms and explains, second press (or a spoken "yes") runs the action. */
-  press: (id: string, msg: Say, action: () => void) => void;
+  /** Voice confirm: the first choice speaks what it does and listens for confirm or cancel; a second tap is a silent fallback. */
+  press: (id: string, msg: Say, action: () => void, lang?: Lang) => void;
   armed: string | null;
   armListening: boolean;
+  /** Repeats the current prompt (the armed confirm, or the screen question) and listens again. */
+  tapRepeat: () => void;
+  /** Asks the current screen's question again. */
+  reask: (o?: AskOpts) => void;
+  registerScreen: (fn: ((o?: AskOpts) => Promise<void>) | null) => void;
+  /** Starts a new voice flow; older flows stop at their next step. */
+  begin: () => number;
+  isCurrent: (token: number) => boolean;
+  clearArm: () => void;
+  mic: Mic;
+  setMic: (m: Mic) => void;
   voiceRef: MutableRefObject<VoiceState>;
   voice: VoiceState;
   markVoiceOff: () => Promise<void>;

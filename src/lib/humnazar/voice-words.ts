@@ -30,7 +30,7 @@ export function parseHelper(text: string): Helper | null {
 
 export function parseLanguage(text: string): Lang | null {
   if (has(text, ["urdu", "اردو"])) return "ur";
-  if (has(text, ["english", "inglish", "انگریزی", "انگلش"])) return "en";
+  if (has(text, ["english", "inglish", "angrezi", "انگریزی", "انگلش", "انگلیش"])) return "en";
   return null;
 }
 
@@ -72,4 +72,50 @@ export function spellRequestNumber(no: string): string {
     .split("-")
     .map((part) => part.split("").join(" "))
     .join(", ");
+}
+
+/* ---------- Spoken confirmation and screen commands ---------- */
+
+export type ConfirmWord = "confirm" | "cancel" | "repeat" | "back";
+
+const CONFIRM_WORDS: [ConfirmWord, string[]][] = [
+  // Cancel is checked first so "جی نہیں" or "no, cancel" never confirms.
+  ["cancel", ["cancel", "no", "nope", "stop", "nahi", "nahin", "منسوخ", "نہیں", "کینسل"]],
+  ["back", ["back", "go back", "wapas", "واپس", "بیک"]],
+  ["repeat", ["repeat", "say again", "again", "dobara", "دوبارہ", "ریپیٹ"]],
+  ["confirm", ["confirm", "confirmed", "yes", "yeah", "yep", "ok", "okay", "continue", "haan", "han", "ji", "تصدیق", "ہاں", "جی", "ٹھیک ہے", "ٹھیک", "آگے", "کنفرم", "اوکے"]],
+];
+/** Answer to "Say confirm or cancel". Also understands repeat and back. */
+export function parseConfirm(text: string): ConfirmWord | null {
+  return CONFIRM_WORDS.find(([, w]) => has(text, w))?.[0] ?? null;
+}
+
+export const CMD_WORDS = {
+  help: ["help", "need help", "i need help", "madad", "مدد", "مدد چاہیے"],
+  takePhoto: ["take photo", "take a photo", "photo", "picture", "camera", "تصویر", "تصویر لیں", "فوٹو"],
+  notSure: ["not sure", "human", "call a human", "call", "person", "یقین نہیں", "انسان", "کال"],
+  done: ["done", "finish", "finished", "ho gaya", "ہو گیا", "ہوگیا", "مکمل"],
+  continue: ["continue", "next", "jari", "جاری", "جاری رکھیں", "آگے"],
+  start: ["start", "start the call", "start call", "shuru", "شروع", "کال شروع کریں"],
+  end: ["end", "end call", "end the call", "khatam", "ختم", "کال ختم کریں"],
+  home: ["home", "go home", "back to home", "ہوم", "ہوم پر واپس"],
+  widen: ["widen", "anyone", "widen to anyone", "کسی سے بھی", "کوئی بھی"],
+  other: ["other", "another", "another option", "other option", "دوسرا", "دوسرا طریقہ"],
+  later: ["later", "ask later", "send later", "بعد میں", "بعد"],
+  call: ["call a human", "human", "call", "person", "volunteer", "انسان", "رضاکار", "کال"],
+  addPhoto: ["add photo", "photo", "picture", "تصویر", "تصویر شامل کریں", "فوٹو"],
+  record: ["record", "voice note", "recording", "ریکارڈ", "ریکارڈ کریں", "صوتی پیغام"],
+  send: ["send", "bhejo", "بھیجیں", "بھیج دیں", "بھیجو"],
+  open: ["open", "listen", "reply", "کھولیں", "سنیں", "جواب"],
+  play: ["play", "listen", "play reply", "چلائیں", "سنیں", "جواب چلائیں"],
+  rate: ["rate", "rating", "ریٹنگ", "درجہ", "درجہ بندی"],
+  friend: ["friend", "add friend", "dost", "دوست"],
+  number: ["number", "my number", "show number", "نمبر", "میرا نمبر"],
+  report: ["report", "complain", "complaint", "شکایت", "رپورٹ"],
+} satisfies Record<string, string[]>;
+export type CmdWord = keyof typeof CMD_WORDS;
+
+/** First command (in the order given) whose words were heard. */
+export function parseCmd(text: string, order: CmdWord[]): CmdWord | null {
+  return order.find((k) => has(text, CMD_WORDS[k])) ?? null;
 }
