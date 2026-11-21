@@ -66,6 +66,13 @@ export function parsePhoto(text: string): Exclude<SampleItemId, "bill"> | null {
   return null;
 }
 
+/** "Show my number" / "hide my number" on Call ended. Hide wins when both appear. */
+export function parseShowHide(text: string): "show" | "hide" | null {
+  if (has(text, ["hide", "hide number", "hide my number", "چھپائیں", "چھپاؤ", "چھپا دیں", "نمبر چھپائیں"])) return "hide";
+  if (has(text, ["show", "show number", "show my number", "دکھائیں", "دکھاؤ", "دکھا دیں", "نمبر دکھائیں"])) return "show";
+  return null;
+}
+
 /** Request numbers are read digit by digit: HNZ-1115-4827 -> "H N Z, 1 1 1 5, 4 8 2 7". */
 export function spellRequestNumber(no: string): string {
   return no

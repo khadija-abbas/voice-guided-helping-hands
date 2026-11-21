@@ -80,6 +80,9 @@ export interface Ctx {
   voiceRef: MutableRefObject<VoiceState>;
   voice: VoiceState;
   markVoiceOff: () => Promise<void>;
+  /** Microphone permission denied: shows and speaks the "Microphone is blocked" message once. */
+  markBlocked: () => Promise<void>;
+  blocked: boolean;
   markVoiceOk: () => void;
 }
 

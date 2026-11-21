@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseYesNo, spellRequestNumber } from "./voice-words";
+import { parseCmd, parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber } from "./voice-words";
 
 describe("spoken answers", () => {
   it("helper words in English and Urdu", () => {
@@ -63,7 +63,6 @@ describe("spoken answers", () => {
   });
 });
 
-import { parseCmd, parseConfirm } from "./voice-words";
 
 describe("spoken confirmation", () => {
   it("confirm words in English and Urdu navigate", () => {
@@ -90,5 +89,15 @@ describe("screen commands", () => {
     expect(parseCmd("مجھے مدد چاہیے", ["help"])).toBe("help");
     expect(parseCmd("ask later", ["call", "later"])).toBe("later");
     expect(parseCmd("banana", ["help"])).toBeNull();
+  });
+});
+
+describe("show or hide number", () => {
+  it("show and hide in English and Urdu", () => {
+    expect(parseShowHide("show my number")).toBe("show");
+    expect(parseShowHide("نمبر دکھائیں")).toBe("show");
+    expect(parseShowHide("hide number")).toBe("hide");
+    expect(parseShowHide("نمبر چھپائیں")).toBe("hide");
+    expect(parseShowHide("number")).toBeNull();
   });
 });

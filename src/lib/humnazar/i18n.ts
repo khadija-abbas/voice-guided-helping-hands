@@ -187,6 +187,7 @@ const en = {
   tapToSpeak: "Tap to speak",
   sayChoice: "Say your choice",
   voiceOff: "Voice input is not available here, so you can tap to answer instead.",
+  micBlocked: "Microphone is blocked. Allow the microphone and reload.",
   fallbackLabel: "Prototype only: tap to answer",
   notChosen: "Not chosen",
   yesWord: "Yes",
@@ -451,6 +452,7 @@ const ur: Dict = {
   tapToSpeak: "بولنے کے لیے دبائیں",
   sayChoice: "اپنا انتخاب بولیں",
   voiceOff: "یہاں آواز سے جواب دستیاب نہیں، اس لیے آپ دبا کر جواب دے سکتے ہیں۔",
+  micBlocked: "مائیک بند ہے۔ مائیک کی اجازت دیں اور صفحہ دوبارہ کھولیں۔",
   fallbackLabel: "صرف پروٹوٹائپ: جواب کے لیے دبائیں",
   notChosen: "منتخب نہیں",
   yesWord: "ہاں",
@@ -542,4 +544,14 @@ export const LANG_SCREEN = {
 } as const;
 
 export const STRINGS: Record<Lang, Dict> = { en, ur };
+
+/** Evaluator status line at the bottom of blind-user screens; English in both languages on purpose. */
+export const MIC_LINE = {
+  idle: "Mic: idle",
+  speaking: "Mic: speaking",
+  listening: "Mic: listening",
+  heard: (x: string) => `Mic: heard '${x}'`,
+  nomatch: "Mic: no match",
+  error: (code: string) => `Mic: error ${code}`,
+};
 export type Strings = Dict;

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type MutableRefObject, type ReactNode } from "react";
 
+import { MIC_LINE } from "@/lib/humnazar/i18n";
 import { LISTEN_MS } from "@/lib/humnazar/logic";
-import { listen, stopListening } from "@/lib/humnazar/speech";
+import { getMic, getMicServer, listen, reportHeard, stopListening, subscribeMic } from "@/lib/humnazar/speech";
 import { parseCmd, parseConfirm, type CmdWord } from "@/lib/humnazar/voice-words";
 import { useP, type AskOpts, type Say, type ScreenVoice } from "./context";
 import { Icon } from "./ui";
@@ -47,7 +48,7 @@ export function ArmHint({ id, listening }: { id: string; listening: boolean }) {
 
 /** Returns the screen's ask(); Frame runs it when the screen opens and registers it for repeat and cancel. */
 export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
-  const { say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, isCurrent, clearArm, setMic, back } = useP();
+  const { say, langRef, voiceRef, markVoiceOff, markBlocked, markVoiceOk, begin, isCurrent, clearArm, setMic, back } = useP();
   const vRef = useRef(voice);
   vRef.current = voice;
   const spokenRef = useRef(spoken);
@@ -77,6 +78,7 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
       const r = await listen(vRef.current?.listenLang?.(attempt) ?? langRef.current, LISTEN_MS);
       if (!isCurrent(token)) return;
       if (r.status === "aborted") { setMic({ s: "idle" }); return; }
+      if (r.status === "blocked") { setMic({ s: "idle" }); await markBlocked(); return; }
       if (r.status === "unavailable") { setMic({ s: "idle" }); await markVoiceOff(); return; }
       const v = vRef.current;
       if (r.status === "ok" && v) {
@@ -85,11 +87,12 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
           const hit = v.parse?.(alt) ?? null;
           const key = hit ? null : parseCmd(alt, Object.keys(v.cmds ?? {}) as CmdWord[]);
           const run = hit ?? (key ? v.cmds?.[key] : undefined);
-          if (run) { setMic({ s: "heard", heard: r.text }); run(); return; }
+          if (run) { setMic({ s: "heard", heard: r.text }); reportHeard(alt, true); run(); return; }
           const nav = parseConfirm(alt);
-          if (nav === "repeat") { void ask({ mode: "full" }); return; }
-          if (nav === "back") { backRef.current(); return; }
+          if (nav === "repeat") { reportHeard(alt, true); void ask({ mode: "full" }); return; }
+          if (nav === "back") { reportHeard(alt, true); backRef.current(); return; }
         }
+        reportHeard(r.text, false);
       }
       if (v?.quiet) { setMic({ s: "idle" }); return; }
       if (attempt === 0) {
@@ -100,7 +103,7 @@ export function useScreenAsk(voice: ScreenVoice | undefined, spoken: Say) {
       }
     }
     setMic({ s: "failed" });
-  }, [say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, isCurrent, clearArm, setMic]);
+  }, [say, langRef, voiceRef, markVoiceOff, markBlocked, markVoiceOk, begin, isCurrent, clearArm, setMic]);
   return ask;
 }
 
@@ -113,6 +116,19 @@ export function MicLine() {
   return <div className="hz-vs hz-mic fail" role="status"><Icon n="al" />{t.tapScreen}</div>;
 }
 
+/** Evaluator line at the bottom of every blind-user screen: Mic: speaking / listening / heard '…' / no match / error <code>. */
+export function MicStatusLine() {
+  const { t, blocked } = useP();
+  const m = useSyncExternalStore(subscribeMic, getMic, getMicServer);
+  const text = m.s === "heard" ? MIC_LINE.heard(m.text) : m.s === "error" ? MIC_LINE.error(m.code) : MIC_LINE[m.s];
+  return (
+    <>
+      {blocked && <div className="hz-vs hz-mic fail" role="alert"><Icon n="al" />{t.micBlocked}</div>}
+      <div className="hz-micst" dir="ltr" lang="en" data-mic-status={m.s}>{text}</div>
+    </>
+  );
+}
+
 /* ---------- Ask by voice ---------- */
 
 type Status = "idle" | "listening" | "heard" | "failed";
@@ -120,7 +136,7 @@ type AskOutcome = "ok" | "fail" | "off" | "cancel";
 
 /** Speaks a question (optional), listens up to 6 s, retries once with "Sorry…", then asks to tap again. */
 export function useVoiceAsk<T>(parse: (text: string) => T | null, onValue: (v: T) => void) {
-  const { say, langRef, voiceRef, markVoiceOff, markVoiceOk, begin, clearArm, setMic } = useP();
+  const { say, langRef, voiceRef, markVoiceOff, markBlocked, markVoiceOk, begin, clearArm, setMic } = useP();
   const [status, setStatus] = useState<Status>("idle");
   const [heard, setHeard] = useState("");
   const alive = useRef(true);
@@ -146,11 +162,13 @@ export function useVoiceAsk<T>(parse: (text: string) => T | null, onValue: (v: T
       const r = await listen(langRef.current, 6000);
       if (!alive.current) return "cancel";
       if (r.status === "aborted") { setStatus("idle"); return "cancel"; }
+      if (r.status === "blocked") { setStatus("idle"); await markBlocked(); return "off"; }
       if (r.status === "unavailable") { setStatus("idle"); await markVoiceOff(); return "off"; }
-      markVoiceOk();
       if (r.status === "ok") {
+        markVoiceOk();
         setHeard(r.text);
         const hit = r.alternatives.map(parse).find((v) => v !== null && v !== undefined);
+        reportHeard(r.text, hit !== undefined && hit !== null);
         if (hit !== undefined && hit !== null) {
           setStatus("heard");
           onValueRef.current(hit);

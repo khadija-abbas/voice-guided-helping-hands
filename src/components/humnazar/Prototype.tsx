@@ -25,13 +25,13 @@ import {
   type Lang,
   type SampleItemId,
 } from "@/lib/humnazar/logic";
-import { cancelSpeech, hasUrduVoice, listen, recognitionSupported, speak, stopListening } from "@/lib/humnazar/speech";
-import { parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
+import { cancelSpeech, closeScreen, hasUrduVoice, listen, openScreen, recognitionSupported, reportHeard, speak, stopListening } from "@/lib/humnazar/speech";
+import { parseConfirm, parseHelper, parseHelpType, parseLanguage, parsePhoto, parseRating, parseShowHide, parseYesNo, spellRequestNumber, type HelpTypeWord } from "@/lib/humnazar/voice-words";
 import {
   PrototypeContext, useP,
   type Anim, type AskOpts, type Ctx, type Mic, type Mode, type Request, type Say, type ScreenId, type ScreenVoice, type Session, type VoiceState,
 } from "./context";
-import { ArmHint, ConfirmBtn, ListenRow, MicLine, useScreenAsk, VoiceRow } from "./voice";
+import { ArmHint, ConfirmBtn, ListenRow, MicLine, MicStatusLine, useScreenAsk, VoiceRow } from "./voice";
 import { Btn, Camera, Icon, Notice, StatusCard, Tip, Toggle } from "./ui";
 
 const IMG: Record<SampleItemId, string> = { spice: spiceImg, medicine: medicineImg, shirt: shirtImg, bill: billImg };
@@ -64,12 +64,14 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, a
   const speech = spoken ?? cap ?? (() => text);
   const ask = useScreenAsk(voice, speech);
 
-  // Every blind-user screen speaks its caption and question when it opens, then listens.
+  // Every blind-user screen gets a new voice-controller id when it opens (older results are ignored),
+  // speaks its caption and question, then listens. Closing the screen stops its speech and listening.
   useEffect(() => {
     if (!blind) return;
+    const id = openScreen();
     registerScreen(ask);
     void ask({ mode: "full" });
-    return () => registerScreen(null);
+    return () => { closeScreen(id); registerScreen(null); };
   }, [blind, ask, registerScreen]);
 
   const content = strip ?? (
@@ -100,6 +102,7 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, a
       )}
       <div className="hz-ct">{children}</div>
       {actions && <div className="hz-ac">{actions}</div>}
+      {blind && <MicStatusLine />}
     </>
   );
 }
@@ -452,7 +455,12 @@ function CallEnded() {
     <Frame title={t.R_title} cap={(x) => x.R_cap}
       voice={{
         q: (x) => x.R_q,
-        parse: (x) => { const n = parseRating(x); return n ? () => rate(n) : null; },
+        parse: (x) => {
+          const n = parseRating(x);
+          if (n) return () => rate(n);
+          const sh = parseShowHide(x);
+          return sh ? () => setNumber(sh === "show") : null;
+        },
         cmds: {
           rate: () => rateAsk.current?.(),
           friend: () => friendAsk.current?.(),
@@ -557,7 +565,7 @@ function AskLater() {
   useEffect(() => {
     if (rec === "rec" && sec >= 5) { setRec("done"); recordedRef.current(); }
   }, [sec, rec]);
-  const startRec = () => { setSec(0); setRec("rec"); };
+  const startRec = () => { stopListening(); setSec(0); setRec("rec"); };
   const stopRec = () => { setRec(sec > 0 ? "done" : "idle"); if (sec > 0) recorded(); };
   const addPhoto = () => {
     setPhoto("bill");
@@ -581,11 +589,14 @@ function AskLater() {
     <Frame title={t.Y_title} cap={(x) => (rec === "rec" ? x.Y_recording : x.Y_cap)} spoken={(x) => x.Y_cap}
       voice={{
         q: (x) => x.Y_q(!!photo, rec === "done"),
-        cmds: {
-          ...(photo ? {} : { addPhoto: () => press("y-photo", (x) => x.cf.addPhoto, addPhoto) }),
-          ...(rec === "rec" ? {} : { record: () => press("y-rec", (x) => x.cf.record, startRec) }),
-          send: () => (canSend ? press("y-send", (x) => x.cf.send, send) : reask({ mode: "listen", pre: (x) => `${x.Y_need} ${x.Y_q(false, false)}` })),
-        },
+        // No recognition while the 5-second recording is simulated.
+        ...(rec === "rec" ? {} : {
+          cmds: {
+            ...(photo ? {} : { addPhoto: () => press("y-photo", (x) => x.cf.addPhoto, addPhoto) }),
+            record: () => press("y-rec", (x) => x.cf.record, startRec),
+            send: () => (canSend ? press("y-send", (x) => x.cf.send, send) : reask({ mode: "listen", pre: (x) => `${x.Y_need} ${x.Y_q(false, false)}` })),
+          },
+        }),
       }}
       actions={<>
         {!canSend && <p className="hz-note">{t.Y_need}</p>}
@@ -798,6 +809,7 @@ export function Prototype() {
   const [armListening, setArmListening] = useState(false);
   const [voice, setVoice] = useState<VoiceState>("unknown");
   const [mic, setMicState] = useState<Mic>({ s: "idle" });
+  const [blocked, setBlocked] = useState(false);
   const phoneRef = useRef<HTMLDivElement>(null);
   const screen: ScreenId = stack[stack.length - 1] ?? "A";
   const blind = !VOLUNTEER_SCREENS.includes(screen);
@@ -838,6 +850,14 @@ export function Prototype() {
     voiceAnnounced.current = true;
     await say((x) => x.voiceOff);
   }, [say]);
+  const markBlocked = useCallback(async () => {
+    voiceRef.current = "off";
+    setVoice("off");
+    setBlocked(true);
+    if (voiceAnnounced.current) return;
+    voiceAnnounced.current = true;
+    await say((x) => x.micBlocked);
+  }, [say]);
   const markVoiceOk = useCallback(() => {
     if (voiceRef.current !== "ok") { voiceRef.current = "ok"; setVoice("ok"); }
   }, []);
@@ -864,10 +884,12 @@ export function Prototype() {
       if (!isCurrent(token)) return;
       setArmListening(false);
       if (r.status === "aborted") return;
+      if (r.status === "blocked") { await markBlocked(); return; }
       if (r.status === "unavailable") { await markVoiceOff(); return; }
       if (r.status === "ok") {
         markVoiceOk();
         const w = r.alternatives.map(parseConfirm).find((x) => x !== null) ?? null;
+        reportHeard(r.text, w !== null);
         if (w === "confirm") { clearArm(); a.action(); return; }
         if (w === "cancel") { clearArm(); reask({ mode: "question" }); return; }
         if (w === "repeat") { void runConfirm(a); return; }
@@ -878,7 +900,7 @@ export function Prototype() {
         if (!ok || !isCurrent(token)) return;
       }
     }
-  }, [begin, isCurrent, setMic, say, markVoiceOff, markVoiceOk, clearArm, reask]);
+  }, [begin, isCurrent, setMic, say, markVoiceOff, markBlocked, markVoiceOk, clearArm, reask]);
 
   const press = useCallback<Ctx["press"]>((id, msg, action, lang) => {
     // Silent fallback for evaluators: a second tap on the same choice runs it.
@@ -949,7 +971,7 @@ export function Prototype() {
   const ctx: Ctx = {
     t, lang: s.lang, langRef, setLang, s, blind, set, go, back, confirmEnd: () => setConfirm(true),
     say, press, armed, armListening, tapRepeat, reask, registerScreen, begin, isCurrent, clearArm,
-    mic, setMic, voiceRef, voice, markVoiceOff, markVoiceOk,
+    mic, setMic, voiceRef, voice, markVoiceOff, markBlocked, blocked, markVoiceOk,
   };
 
   // Tapping empty space on a blind-user screen repeats the prompt and listens again.
@@ -976,7 +998,7 @@ export function Prototype() {
 }
 
 function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
-  const { t, blind, say, begin, isCurrent, langRef, voiceRef } = useP();
+  const { t, blind, say, begin, isCurrent, langRef, voiceRef, markBlocked } = useP();
   const noRef = useRef<HTMLButtonElement>(null);
   const yesRef = useRef(onYes);
   yesRef.current = onYes;
@@ -999,13 +1021,15 @@ function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void })
         const r = await listen(langRef.current, LISTEN_MS);
         if (!isCurrent(token)) return;
         if (r.status === "aborted" || r.status === "unavailable") return;
+        if (r.status === "blocked") { await markBlocked(); return; }
         if (r.status === "ok") {
           for (const alt of r.alternatives) {
             const c = parseConfirm(alt);
             const v = parseYesNo(alt) ?? (c === "confirm" ? "yes" : c === "cancel" ? "no" : null);
-            if (v === "yes") { yesRef.current(); return; }
-            if (v === "no") { noFn.current(); return; }
+            if (v === "yes") { reportHeard(alt, true); yesRef.current(); return; }
+            if (v === "no") { reportHeard(alt, true); noFn.current(); return; }
           }
+          reportHeard(r.text, false);
         }
         if (attempt === 0) {
           ok = await say((x) => `${x.notHeardQ} ${x.M_confirmQ}`);
@@ -1013,7 +1037,7 @@ function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void })
         }
       }
     })();
-  }, [blind, begin, isCurrent, say, langRef, voiceRef]);
+  }, [blind, begin, isCurrent, say, langRef, voiceRef, markBlocked]);
   return (
     <div className={`hz-scrim${blind ? " hz-blind" : ""}`} onClick={onNo}>
       <div className="hz-dlg" role="alertdialog" aria-modal="true" aria-labelledby="hz-dlg-t" aria-describedby="hz-dlg-d" onClick={(e) => e.stopPropagation()}>
