@@ -1074,13 +1074,23 @@ export function Prototype() {
     if ((e.target as HTMLElement).closest("button, a, input, label, [role=radio], [role=switch]")) return;
     tapRepeat();
   };
+  // Blind-user screens: a tap on any control never selects or navigates; it only repeats the prompt.
+  // Start and volunteer screens (and Choose language for a volunteer) keep their taps.
+  const tapsHarmless = blind && screen !== "A" && !(screen === "L" && s.role === "volunteer");
+  const onControlTapCapture = (e: MouseEvent) => {
+    if (!tapsHarmless) return;
+    if (!(e.target as HTMLElement).closest("button, a, input, label, [role=button], [role=radio], [role=switch]")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    tapRepeat();
+  };
 
   return (
     <PrototypeContext.Provider value={ctx}>
       <main className="hz-stage">
         <div ref={phoneRef} className="hz-ph" dir={s.lang === "ur" ? "rtl" : "ltr"} lang={s.lang} aria-label="Humnazar prototype">
           <div className="hz-sb" dir="ltr" aria-hidden="true"><span>9:41</span><span>4G</span></div>
-          <div key={navKey} className={`hz-screen hz-anim-${anim}${blind ? " hz-blind" : ""}`} onClick={onEmptyTap}>
+          <div key={navKey} className={`hz-screen hz-anim-${anim}${blind ? " hz-blind" : ""}`} onClickCapture={onControlTapCapture} onClick={onEmptyTap}>
             <Screen />
           </div>
           <div className="hz-hi" aria-hidden="true"><i /></div>
@@ -1098,6 +1108,13 @@ function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void })
   yesRef.current = onYes;
   const noFn = useRef(onNo);
   noFn.current = onNo;
+  // Blind users: taps on the dialog only repeat its question (bumping this restarts the voice loop).
+  const [repeat, setRepeat] = useState(0);
+  const tap = (fn: () => void) => (e: MouseEvent) => {
+    e.stopPropagation();
+    if (blind) setRepeat((n) => n + 1);
+    else fn();
+  };
   useEffect(() => {
     noRef.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onNo(); };
@@ -1131,14 +1148,14 @@ function EndCallDialog({ onYes, onNo }: { onYes: () => void; onNo: () => void })
         }
       }
     })();
-  }, [blind, begin, isCurrent, say, langRef, voiceRef, markBlocked]);
+  }, [blind, begin, isCurrent, say, langRef, voiceRef, markBlocked, repeat]);
   return (
-    <div className={`hz-scrim${blind ? " hz-blind" : ""}`} onClick={onNo}>
-      <div className="hz-dlg" role="alertdialog" aria-modal="true" aria-labelledby="hz-dlg-t" aria-describedby="hz-dlg-d" onClick={(e) => e.stopPropagation()}>
+    <div className={`hz-scrim${blind ? " hz-blind" : ""}`} onClick={tap(onNo)}>
+      <div className="hz-dlg" role="alertdialog" aria-modal="true" aria-labelledby="hz-dlg-t" aria-describedby="hz-dlg-d" onClick={tap(() => {})}>
         <h2 id="hz-dlg-t">{t.M_confirm}</h2>
         <p id="hz-dlg-d" style={{ margin: 0 }}>{t.M_confirmBody}</p>
-        <button type="button" className="hz-bt hz-p" onClick={onYes}>{t.M_yes}</button>
-        <button type="button" ref={noRef} className="hz-bt hz-s" onClick={onNo}>{t.M_no}</button>
+        <button type="button" className="hz-bt hz-p" onClick={tap(onYes)}>{t.M_yes}</button>
+        <button type="button" ref={noRef} className="hz-bt hz-s" onClick={tap(onNo)}>{t.M_no}</button>
       </div>
     </div>
   );
