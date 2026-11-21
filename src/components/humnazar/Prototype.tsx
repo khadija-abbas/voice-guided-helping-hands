@@ -55,15 +55,16 @@ const initialSession: Session = {
 
 /* ---------- Frame ---------- */
 
-function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, actions, noBack }: {
-  title: string; caption?: string; cap?: Say; spoken?: Say; voice?: ScreenVoice; strip?: ReactNode; hideMic?: boolean;
+function Frame({ title, caption, cap, spoken, voice, strip, hideMic, hideCap, children, actions, noBack }: {
+  title: string; caption?: string; cap?: Say; spoken?: Say; voice?: ScreenVoice; strip?: ReactNode; hideMic?: boolean; hideCap?: boolean;
   children?: ReactNode; actions?: ReactNode; noBack?: boolean;
 }) {
   const { t, lang, back, blind, s, registerScreen, tapRepeat } = useP();
   const text = cap ? cap(t, lang) : (caption ?? "");
   // Blind-user screens: the "Reads aloud:" box is hidden from view (the caption is still spoken).
   // Choose language is shared with volunteers, so their copy of this screen keeps the box.
-  const capHidden = blind && s.role !== "volunteer";
+  // hideCap hides the box on one screen only (the Start screen); the spoken caption is untouched.
+  const capHidden = hideCap || (blind && s.role !== "volunteer");
   const speech = spoken ?? cap ?? (() => text);
   const ask = useScreenAsk(voice, speech);
 
@@ -101,7 +102,7 @@ function Frame({ title, caption, cap, spoken, voice, strip, hideMic, children, a
           {!hideMic && <MicLine />}
         </>
       ) : (
-        <div className="hz-cs" role="status" aria-live="polite">{content}</div>
+        <div className={`hz-cs${capHidden ? " hz-hide" : ""}`} role="status" aria-live="polite">{content}</div>
       )}
       <div className="hz-ct">{children}</div>
       {actions && <div className="hz-ac">{actions}</div>}
@@ -172,7 +173,7 @@ function StartScreen() {
   }, [ask, registerScreen]);
 
   return (
-    <Frame noBack title={t.A_title}
+    <Frame noBack hideCap title={t.A_title}
       strip={<>
         <Icon n="sp" s={20} />
         <span dir="ltr" lang="en"><b>{START_VOICE.readsAloud}</b> {START_VOICE.prompt.en}</span>
