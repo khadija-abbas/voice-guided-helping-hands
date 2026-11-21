@@ -19,14 +19,19 @@ function has(text: string, words: string[]): boolean {
   return words.some((w) => n.includes(` ${norm(w)} `));
 }
 
-const HELPER_WORDS: [Helper, string[]][] = [
-  ["anyone", ["anyone", "any one", "anybody", "everyone", "koi bhi", "کوئی بھی"]],
-  ["woman", ["woman", "women", "female", "lady", "khatoon", "aurat", "خاتون", "عورت", "خواتین"]],
-  ["friend", ["friend", "friends", "dost", "دوست"]],
-  ["man", ["man", "men", "male", "mard", "aadmi", "admi", "مرد", "آدمی"]],
-];
+/** True when any word or phrase appears anywhere in the heard text (lowercased, punctuation removed). */
+function contains(text: string, words: string[]): boolean {
+  const n = norm(text);
+  return words.some((w) => n.includes(norm(w)));
+}
+
+/** Choose helper: "contains" matching; woman is checked before man, and man matches whole words only. */
 export function parseHelper(text: string): Helper | null {
-  return HELPER_WORDS.find(([, w]) => has(text, w))?.[0] ?? null;
+  if (contains(text, ["friend", "friends", "frend", "دوست"])) return "friend";
+  if (contains(text, ["woman", "women", "lady", "خاتون", "عورت"])) return "woman";
+  if (has(text, ["man", "men", "مرد", "آدمی"])) return "man";
+  if (contains(text, ["anyone", "any one", "anybody", "کوئی بھی"])) return "anyone";
+  return null;
 }
 
 export function parseLanguage(text: string): Lang | null {
@@ -60,10 +65,11 @@ export function parseRating(text: string): number | null {
   return RATING_WORDS.find(([, w]) => has(text, w))?.[0] ?? null;
 }
 
+/** Quick Look: take photo. "Contains" matching on the heard text. */
 export function parsePhoto(text: string): Exclude<SampleItemId, "bill"> | null {
-  if (has(text, ["spice", "spices", "packet", "masala", "biryani", "مصالحہ", "مصالحے", "مسالہ", "پیکٹ", "بریانی"])) return "spice";
-  if (has(text, ["medicine", "strip", "tablet", "tablets", "pill", "pills", "dawa", "دوا", "دوائی", "گولی", "پٹی"])) return "medicine";
-  if (has(text, ["shirt", "shirts", "qameez", "قمیض", "قمیص"])) return "shirt";
+  if (contains(text, ["spice", "packet", "masala", "مصالحہ"])) return "spice";
+  if (contains(text, ["medicine", "strip", "tablet", "دوا"])) return "medicine";
+  if (contains(text, ["shirt", "shirts", "clothes", "قمیض"])) return "shirt";
   return null;
 }
 

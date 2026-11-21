@@ -149,3 +149,22 @@ describe("first command on Home, Choose helper, Before the call, Live call, Call
     expect(parseCallEnded("banana")).toBeNull();
   });
 });
+
+describe("Quick Look photo and Choose helper: contains matching on the heard text", () => {
+  it("picks the photo from any listed word inside the transcript", () => {
+    expect(parsePhoto("Spices, please!")).toBe("spice");
+    expect(parsePhoto("the masala one")).toBe("spice");
+    expect(parsePhoto("tablets")).toBe("medicine");
+    expect(parsePhoto("my clothes")).toBe("shirt");
+    expect(parsePhoto("hello")).toBeNull();
+  });
+  it("matches helpers, checking woman before man and man as a whole word only", () => {
+    expect(parseHelper("my frend")).toBe("friend");
+    expect(parseHelper("Woman.")).toBe("woman");
+    expect(parseHelper("women")).toBe("woman");
+    expect(parseHelper("Man!")).toBe("man");
+    expect(parseHelper("men")).toBe("man");
+    expect(parseHelper("anybody")).toBe("anyone");
+    expect(parseHelper("command")).toBeNull();
+  });
+});

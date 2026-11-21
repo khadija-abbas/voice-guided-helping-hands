@@ -245,7 +245,19 @@ function QuickLookPhoto() {
   }
   return (
     <Frame title={t.QP_title} cap={(x) => x.QP_cap2} hideMic
-      voice={{ q: (x) => x.QP_q, parse: (x) => { const id = parsePhoto(x); return id ? () => press(`photo-${id}`, (y) => y.cf.photo(y.itemShort[id]), () => choose(id)) : null; } }}>
+      voice={{
+        q: (x) => x.QP_q,
+        options: (x) => x.QP_opts,
+        parse: (x) => {
+          const id = parsePhoto(x);
+          if (!id) return null;
+          return () => {
+            // Pick the photo right away, then speak it and ask for confirm or cancel.
+            set((s) => ({ ...s, request: { ...s.request, photo: id } }));
+            press(`photo-${id}`, (y) => y.cf.photo(y.itemShort[id]), () => choose(id));
+          };
+        },
+      }}>
       <ListenRow />
       <p className="hz-lbl">{t.QP_pick}</p>
       {(["spice", "medicine", "shirt"] as const).map((id) => (
@@ -293,8 +305,9 @@ function ChooseHelper() {
   const helpers: Helper[] = ["friend", "woman", "man", "anyone"];
   const pickHelper = (h: Helper) => {
     if (s.unavailable.includes(h)) { reask({ mode: "listen", pre: (x) => `${x.G_notFree(h)} ${x.G_qHelper}` }); return; }
+    // Update the Helper row right away, say "Helper: …", then ask for confirm or cancel.
     set((x) => ({ ...x, helper: h }));
-    reask({ mode: "listen", pre: (x) => `${x.G_echoHelper(x.helper[h])} ${x.G_qNext}` });
+    press("g-continue", (x) => `${x.G_echoHelper(x.helper[h])} ${x.sayConfirm}`, next);
   };
   const next = () => go("T");
   return (
